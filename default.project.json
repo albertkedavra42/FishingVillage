@@ -1,0 +1,84 @@
+{
+  "name": "FishingVillage",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Shared": {
+        "$className": "Folder",
+        "Config": {
+          "$className": "Folder",
+          "FishDefinitions": {
+            "$path": "src/ReplicatedStorage/Shared/Config/FishDefinitions.lua"
+          },
+          "BoatDefinitions": {
+            "$path": "src/ReplicatedStorage/Shared/Config/BoatDefinitions.lua"
+          },
+          "ZoneDefinitions": {
+            "$path": "src/ReplicatedStorage/Shared/Config/ZoneDefinitions.lua"
+          },
+          "ItemDefinitions": {
+            "$path": "src/ReplicatedStorage/Shared/Config/ItemDefinitions.lua"
+          },
+          "UIConfig": {
+            "$path": "src/ReplicatedStorage/Shared/Config/UIConfig.lua"
+          }
+        },
+        "Remotes": {
+          "$path": "src/ReplicatedStorage/Shared/Remotes.lua"
+        }
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Server": {
+        "$className": "Folder",
+        "Init": {
+          "$path": "src/ServerScriptService/Server/Init.server.lua"
+        },
+        "PlayerDataService": {
+          "$path": "src/ServerScriptService/Server/PlayerDataService.lua"
+        },
+        "EconomyService": {
+          "$path": "src/ServerScriptService/Server/EconomyService.lua"
+        },
+        "FishingService": {
+          "$path": "src/ServerScriptService/Server/FishingService.lua"
+        },
+        "CargoService": {
+          "$path": "src/ServerScriptService/Server/CargoService.lua"
+        },
+        "BoatService": {
+          "$path": "src/ServerScriptService/Server/BoatService.lua"
+        },
+        "WorldService": {
+          "$path": "src/ServerScriptService/Server/WorldService.lua"
+        }
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "Client": {
+          "$className": "Folder",
+          "UIController": {
+            "$path": "src/StarterPlayer/StarterPlayerScripts/Client/UIController.lua"
+          },
+          "FishingController": {
+            "$path": "src/StarterPlayer/StarterPlayerScripts/Client/FishingController.lua"
+          },
+          "BoatController": {
+            "$path": "src/StarterPlayer/StarterPlayerScripts/Client/BoatController.lua"
+          },
+          "CameraController": {
+            "$path": "src/StarterPlayer/StarterPlayerScripts/Client/CameraController.lua"
+          }
+        }
+      }
+    },
+    "StarterGui": {
+      "$className": "StarterGui"
+    }
+  }
+}
