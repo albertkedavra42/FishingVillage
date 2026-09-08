@@ -11,20 +11,6 @@ local currentZone = nil
 local currentSpot = nil
 local fishingMethod = "Rod"
 
-local biteTimer = nil
-local tensionLevel = 0
-local reelProgress = 0
-local fishOnLine = false
-
-local MINIGAME_CONFIG = {
-	TensionDecayRate = 0.3,
-	TensionGainRate = 0.5,
-	ReelSpeed = 0.4,
-	MaxTension = 100,
-	BreakThreshold = 95,
-	SuccessThreshold = 100,
-}
-
 function FishingController.Init()
 	local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
@@ -44,35 +30,6 @@ function FishingController.Init()
 		FishingController.OnSpotUpdate(data)
 	end)
 
-	-- Connect input for minigame
-	game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then
-			return
-		end
-
-		if isFishing and fishOnLine then
-			if input.UserInputType == Enum.UserInputType.MouseButton1
-				or input.UserInputType == Enum.UserInputType.Touch
-				or input.KeyCode == Enum.KeyCode.Space then
-				FishingController.StartReeling()
-			end
-		end
-	end)
-
-	game:GetService("UserInputService").InputEnded:Connect(function(input, gameProcessed)
-		if gameProcessed then
-			return
-		end
-
-		if isFishing and fishOnLine then
-			if input.UserInputType == Enum.UserInputType.MouseButton1
-				or input.UserInputType == Enum.UserInputType.Touch
-				or input.KeyCode == Enum.KeyCode.Space then
-				FishingController.StopReeling()
-			end
-		end
-	end)
-
 	print("[FishingController] Initialized")
 end
 
@@ -86,14 +43,14 @@ function FishingController.CastLine(zoneId: string, spotId: string, method: stri
 
 	if result.Success then
 		isFishing = true
-		fishOnLine = false
-		tensionLevel = 0
-		reelProgress = 0
+
+		-- Show waiting UI
+		FishingController.ShowWaitingUI(result.BiteTime)
 
 		-- Start bite timer
-		biteTimer = task.delay(result.BiteTime, function()
-			if isFishing and not fishOnLine then
-				FishingController.TriggerBite()
+		task.delay(result.BiteTime, function()
+			if isFishing then
+				-- Bite happens, server will fire FishBite
 			end
 		end)
 
@@ -103,110 +60,91 @@ function FishingController.CastLine(zoneId: string, spotId: string, method: stri
 	return false
 end
 
-function FishingController.TriggerBite()
-	fishOnLine = true
-	tensionLevel = 20
+function FishingController.OnFishBite(data)
+	if not isFishing then return end
 
-	-- Notify server
-	local Remotes = require(ReplicatedStorage.Shared.Remotes)
-	Remotes.GetServerToClient().FishBite:FireServer({
+	-- Hide waiting UI, start minigame
+	FishingController.HideWaitingUI()
+
+	local FishingMinigame = require(script.Parent.FishingMinigame)
+	local difficulty = 1.0
+
+	-- Increase difficulty at night
+	local WorldService = require(ReplicatedStorage):FindFirstChild("Shared")
+	-- Simple difficulty scaling
+	if data.TimeOfDay == "Night" or data.TimeOfDay == "LateNight" then
+		difficulty = 1.3
+	end
+
+	FishingMinigame.Start({
+		SpeciesId = data.SpeciesId,
 		ZoneId = currentZone,
 		SpotId = currentSpot,
-	})
-end
-
-function FishingController.OnFishBite(data)
-	-- Visual/audio feedback for bite
-	fishOnLine = true
-	tensionLevel = 20
-
-	-- Start minigame loop
-	task.spawn(function()
-		while isFishing and fishOnLine do
-			task.wait(0.05)
-
-			-- Update tension decay
-			if not isReeling then
-				tensionLevel = math.max(0, tensionLevel - MINIGAME_CONFIG.TensionDecayRate)
-			end
-
-			-- Check break condition
-			if tensionLevel >= MINIGAME_CONFIG.BreakThreshold then
-				FishingController.FishEscaped("Line snapped!")
-				return
-			end
-
-			-- Check success
-			if reelProgress >= MINIGAME_CONFIG.SuccessThreshold then
-				FishingController.CatchFish()
-				return
-			end
-		end
-	end)
-end
-
-local isReeling = false
-
-function FishingController.StartReeling()
-	if not isFishing or not fishOnLine then
-		return
-	end
-
-	isReeling = true
-
-	-- Increase tension while reeling
-	task.spawn(function()
-		while isReeling and isFishing do
-			tensionLevel = math.min(MINIGAME_CONFIG.MaxTension, tensionLevel + MINIGAME_CONFIG.TensionGainRate)
-			reelProgress = reelProgress + MINIGAME_CONFIG.ReelSpeed
-			task.wait(0.05)
-		end
-	end)
-end
-
-function FishingController.StopReeling()
-	isReeling = false
-end
-
-function FishingController.CatchFish()
-	local Remotes = require(ReplicatedStorage.Shared.Remotes)
-	local result = Remotes.GetClientToServer().ReelIn:InvokeServer(true)
-
-	isFishing = false
-	fishOnLine = false
-	tensionLevel = 0
-	reelProgress = 0
-
-	if result.Caught then
-		-- Show catch UI
-		FishingController.ShowCatchResult(result)
-	end
-end
-
-function FishingController.FishEscaped(reason: string)
-	local Remotes = require(ReplicatedStorage.Shared.Remotes)
-	Remotes.GetClientToServer().ReelIn:InvokeServer(false)
-
-	isFishing = false
-	fishOnLine = false
-	tensionLevel = 0
-	reelProgress = 0
-
-	-- Show escape message
-	local UIController = require(script.Parent.UIController)
-	UIController.ShowNotification("Fish escaped! " .. (reason or ""))
+		Method = fishingMethod,
+	}, difficulty)
 end
 
 function FishingController.OnFishCaught(data)
-	-- Server confirmed catch
+	isFishing = false
+
+	-- Show catch result
+	FishingController.ShowCatchResult(data)
 end
 
 function FishingController.OnFishEscaped(data)
-	-- Server confirmed escape
+	isFishing = false
 end
 
 function FishingController.OnSpotUpdate(data)
 	-- Update spot visuals
+end
+
+function FishingController.ShowWaitingUI(biteTime: number)
+	local UIConfig = require(ReplicatedStorage.Shared.Config.UIConfig)
+
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "FishingWaiting"
+	screenGui.ResetOnSpawn = false
+
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(0, 200, 0, 60)
+	frame.Position = UDim2.new(0.5, -100, 0.7, 0)
+	frame.BackgroundColor3 = Color3.fromHex("#000000")
+	frame.BackgroundTransparency = 0.4
+	frame.BorderSizePixel = 0
+	frame.Parent = screenGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
+	corner.Parent = frame
+
+	local text = Instance.new("TextLabel")
+	text.Size = UDim2.new(1, 0, 1, 0)
+	text.BackgroundTransparency = 1
+	text.Text = "Waiting for a bite..."
+	text.TextColor3 = UIConfig.Colors.White
+	text.TextSize = UIConfig.TextSizes.Subheader
+	text.Font = UIConfig.Fonts.Body
+	text.Parent = frame
+
+	screenGui.Parent = player.PlayerGui
+
+	-- Animate dots
+	task.spawn(function()
+		local dots = 0
+		while screenGui and screenGui.Parent do
+			dots = (dots + 1) % 4
+			text.Text = "Waiting for a bite" .. string.rep(".", dots)
+			task.wait(0.5)
+		end
+	end)
+end
+
+function FishingController.HideWaitingUI()
+	local gui = player.PlayerGui:FindFirstChild("FishingWaiting")
+	if gui then
+		gui:Destroy()
+	end
 end
 
 function FishingController.ShowCatchResult(result)
@@ -217,8 +155,8 @@ function FishingController.ShowCatchResult(result)
 	screenGui.ResetOnSpawn = false
 
 	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(0, 350, 0, 250)
-	frame.Position = UDim2.new(0.5, -175, 0.5, -125)
+	frame.Size = UDim2.new(0, 350, 0, 280)
+	frame.Position = UDim2.new(0.5, -175, 0.5, -140)
 	frame.BackgroundColor3 = UIConfig.Colors.Background
 	frame.BorderSizePixel = 0
 	frame.Parent = screenGui
@@ -235,46 +173,51 @@ function FishingController.ShowCatchResult(result)
 		rarityColor = UIConfig.RarityColors[species.Rarity] or rarityColor
 	end
 
+	-- Title
 	local title = Instance.new("TextLabel")
 	title.Size = UDim2.new(1, 0, 0, 40)
 	title.Position = UDim2.new(0, 0, 0, 15)
 	title.BackgroundTransparency = 1
-	title.Text = result.SpeciesId
+	title.Text = result.SpeciesId or "Unknown"
 	title.TextColor3 = rarityColor
 	title.TextSize = UIConfig.TextSizes.HeaderLarge
 	title.Font = UIConfig.Fonts.Header
 	title.Parent = frame
 
+	-- Variant
 	local variantLabel = Instance.new("TextLabel")
 	variantLabel.Size = UDim2.new(1, 0, 0, 25)
 	variantLabel.Position = UDim2.new(0, 0, 0, 55)
 	variantLabel.BackgroundTransparency = 1
-	variantLabel.Text = result.Variant
+	variantLabel.Text = result.Variant or "Normal"
 	variantLabel.TextColor3 = UIConfig.Colors.Muted
 	variantLabel.TextSize = UIConfig.TextSizes.Subheader
 	variantLabel.Font = UIConfig.Fonts.Body
 	variantLabel.Parent = frame
 
+	-- Weight
 	local weightLabel = Instance.new("TextLabel")
 	weightLabel.Size = UDim2.new(1, 0, 0, 25)
 	weightLabel.Position = UDim2.new(0, 0, 0, 85)
 	weightLabel.BackgroundTransparency = 1
-	weightLabel.Text = "Weight: " .. string.format("%.1f", result.Weight) .. " kg"
+	weightLabel.Text = "Weight: " .. string.format("%.1f", result.Weight or 0) .. " kg"
 	weightLabel.TextColor3 = UIConfig.Colors.Text
 	weightLabel.TextSize = UIConfig.TextSizes.Body
 	weightLabel.Font = UIConfig.Fonts.Body
 	weightLabel.Parent = frame
 
+	-- Value
 	local valueLabel = Instance.new("TextLabel")
 	valueLabel.Size = UDim2.new(1, 0, 0, 25)
 	valueLabel.Position = UDim2.new(0, 0, 0, 115)
 	valueLabel.BackgroundTransparency = 1
-	valueLabel.Text = "Value: " .. result.Value .. " Gold"
+	valueLabel.Text = "Value: " .. tostring(result.Value or 0) .. " Gold"
 	valueLabel.TextColor3 = UIConfig.Colors.Gold
 	valueLabel.TextSize = UIConfig.TextSizes.Body
 	valueLabel.Font = UIConfig.Fonts.Body
 	valueLabel.Parent = frame
 
+	-- New discovery
 	if result.IsNewDiscovery then
 		local discoveryLabel = Instance.new("TextLabel")
 		discoveryLabel.Size = UDim2.new(1, 0, 0, 25)
@@ -287,52 +230,75 @@ function FishingController.ShowCatchResult(result)
 		discoveryLabel.Parent = frame
 	end
 
-	local closeBtn = Instance.new("TextButton")
-	closeBtn.Size = UDim2.new(0, 120, 0, 40)
-	closeBtn.Position = UDim2.new(0.5, -60, 1, -55)
-	closeBtn.BackgroundColor3 = UIConfig.Colors.Seafoam
-	closeBtn.Text = "Keep"
-	closeBtn.TextColor3 = UIConfig.Colors.Text
-	closeBtn.TextSize = UIConfig.TextSizes.Body
-	closeBtn.Font = UIConfig.Fonts.Button
-	closeBtn.Parent = frame
+	-- Keep button
+	local keepBtn = Instance.new("TextButton")
+	keepBtn.Size = UDim2.new(0, 120, 0, 40)
+	keepBtn.Position = UDim2.new(0.5, -130, 1, -55)
+	keepBtn.BackgroundColor3 = UIConfig.Colors.Seafoam
+	keepBtn.Text = "Keep"
+	keepBtn.TextColor3 = UIConfig.Colors.Text
+	keepBtn.TextSize = UIConfig.TextSizes.Body
+	keepBtn.Font = UIConfig.Fonts.Button
+	keepBtn.Parent = frame
 
-	local btnCorner = Instance.new("UICorner")
-	btnCorner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
-	btnCorner.Parent = closeBtn
+	local keepCorner = Instance.new("UICorner")
+	keepCorner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
+	keepCorner.Parent = keepBtn
 
-	closeBtn.MouseButton1Click:Connect(function()
+	keepBtn.MouseButton1Click:Connect(function()
+		screenGui:Destroy()
+	end)
+
+	-- Discard button
+	local discardBtn = Instance.new("TextButton")
+	discardBtn.Size = UDim2.new(0, 120, 0, 40)
+	discardBtn.Position = UDim2.new(0.5, 10, 1, -55)
+	discardBtn.BackgroundColor3 = UIConfig.Colors.Muted
+	discardBtn.Text = "Discard"
+	discardBtn.TextColor3 = UIConfig.Colors.White
+	discardBtn.TextSize = UIConfig.TextSizes.Body
+	discardBtn.Font = UIConfig.Fonts.Button
+	discardBtn.Parent = frame
+
+	local discardCorner = Instance.new("UICorner")
+	discardCorner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
+	discardCorner.Parent = discardBtn
+
+	discardBtn.MouseButton1Click:Connect(function()
 		screenGui:Destroy()
 	end)
 
 	screenGui.Parent = player.PlayerGui
 
-	game:GetService("Debris"):AddItem(screenGui, 5)
+	-- Auto-close after 8 seconds
+	game:GetService("Debris"):AddItem(screenGui, 8)
 end
 
 function FishingController.IsFishing()
 	return isFishing
 end
 
-function FishingController.GetTension()
-	return tensionLevel
-end
-
-function FishingController.GetReelProgress()
-	return reelProgress
-end
-
 function FishingController.CancelFishing()
 	if isFishing then
 		isFishing = false
-		fishOnLine = false
-		tensionLevel = 0
-		reelProgress = 0
-		if biteTimer then
-			task.cancel(biteTimer)
-			biteTimer = nil
+		FishingController.HideWaitingUI()
+		local FishingMinigame = require(script.Parent.FishingMinigame)
+		if FishingMinigame.IsActive() then
+			FishingMinigame.Cancel()
 		end
 	end
+end
+
+function FishingController.GetCurrentZone()
+	return currentZone
+end
+
+function FishingController.GetCurrentSpot()
+	return currentSpot
+end
+
+function FishingController.GetMethod()
+	return fishingMethod
 end
 
 return FishingController

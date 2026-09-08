@@ -142,34 +142,35 @@ c2s.CastLine.OnServerInvoke = function(player, zoneId, spotId, method)
 end
 
 c2s.ReelIn.OnServerInvoke = function(player, success)
+	-- Capture active fishing data BEFORE stopping
+	local active = FishingService.GetActiveFishing(player)
 	FishingService.StopFishing(player)
 
 	if not success then
 		return { Caught = false }
 	end
 
-	local active = FishingService.GetActiveFishing(player)
-	-- After stop, active is nil, so we need to track zone from boat
-	local boat = BoatService.GetBoat(player)
-	if not boat then
-		return { Caught = false }
+	if not active then
+		return { Caught = false, Reason = "Not fishing" }
 	end
 
-	local zoneId = boat.CurrentZone or "Shallows"
+	local zoneId = active.ZoneId
 	local timePhase = WorldService.GetCurrentTimePhase()
+	local method = active.Method or "Rod"
 
-	local catch = FishingService.SelectCatch(zoneId, timePhase, "Rod")
+	local catch = FishingService.SelectCatch(zoneId, timePhase, method)
 	if not catch then
 		return { Caught = false, Reason = "Nothing bit" }
 	end
 
 	-- Calculate value
-	local variantMod = require(ReplicatedStorage.Shared.Config.FishDefinitions).VariantModifiers[catch.Variant]
-	local baseValue = require(ReplicatedStorage.Shared.Config.FishDefinitions).GetSpecies(catch.SpeciesId).BaseValue
+	local FishDefs = require(ReplicatedStorage.Shared.Config.FishDefinitions)
+	local variantMod = FishDefs.VariantModifiers[catch.Variant]
+	local speciesDef = FishDefs.GetSpecies(catch.SpeciesId)
+	local baseValue = speciesDef and speciesDef.BaseValue or 10
 	local value = math.floor(baseValue * (variantMod and variantMod.ValueMultiplier or 1))
 
 	-- Try to place in cargo
-	local speciesDef = require(ReplicatedStorage.Shared.Config.FishDefinitions).GetSpecies(catch.SpeciesId)
 	local placed = CargoService.PlaceItem(
 		player,
 		catch.SpeciesId,
@@ -179,7 +180,7 @@ c2s.ReelIn.OnServerInvoke = function(player, success)
 		catch.Size[2],
 		catch.Weight,
 		value,
-		1.0 -- fresh
+		1.0
 	)
 
 	if not placed then

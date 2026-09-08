@@ -25,6 +25,9 @@
           },
           "VillageMap": {
             "$path": "src/ReplicatedStorage/Shared/Config/VillageMap.lua"
+          },
+          "FishingSpotConfig": {
+            "$path": "src/ReplicatedStorage/Shared/Config/FishingSpotConfig.lua"
           }
         },
         "Remotes": {
@@ -82,6 +85,9 @@
           },
           "DockUI": {
             "$path": "src/StarterPlayer/StarterPlayerScripts/Client/DockUI.lua"
+          },
+          "FishingMinigame": {
+            "$path": "src/StarterPlayer/StarterPlayerScripts/Client/FishingMinigame.lua"
           }
         }
       }
