@@ -22,6 +22,9 @@
           },
           "UIConfig": {
             "$path": "src/ReplicatedStorage/Shared/Config/UIConfig.lua"
+          },
+          "VillageMap": {
+            "$path": "src/ReplicatedStorage/Shared/Config/VillageMap.lua"
           }
         },
         "Remotes": {
@@ -53,6 +56,9 @@
         },
         "WorldService": {
           "$path": "src/ServerScriptService/Server/WorldService.lua"
+        },
+        "DockInteraction": {
+          "$path": "src/ServerScriptService/Server/DockInteraction.lua"
         }
       }
     },
@@ -73,6 +79,9 @@
           },
           "CameraController": {
             "$path": "src/StarterPlayer/StarterPlayerScripts/Client/CameraController.lua"
+          },
+          "DockUI": {
+            "$path": "src/StarterPlayer/StarterPlayerScripts/Client/DockUI.lua"
           }
         }
       }

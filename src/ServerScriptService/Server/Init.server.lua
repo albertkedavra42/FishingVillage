@@ -26,10 +26,12 @@ FishingService.Init()
 local PlayerDataService = require(ServerScriptService.Server.PlayerDataService)
 local BoatService = require(ServerScriptService.Server.BoatService)
 local CargoService = require(ServerScriptService.Server.CargoService)
+local DockInteraction = require(ServerScriptService.Server.DockInteraction)
 
 PlayerDataService.Init()
 BoatService.Init()
 CargoService.Init()
+DockInteraction.Init()
 
 -- ==========================================
 -- REMOTE HANDLERS
@@ -40,24 +42,27 @@ local c2s = Remotes.GetClientToServer()
 
 -- Boat Remotes
 c2s.SpawnBoat.OnServerInvoke = function(player)
-	local success, data = BoatService.SpawnBoat(player)
+	local success, data = DockInteraction.SpawnBoatAtDock(player)
 	if success then
-		CargoService.InitPlayerCargo(player, data.BoatId)
-		s2c.BoatSpawned:FireClient(player, data)
+		local profile = PlayerDataService.GetProfile(player)
+		if profile then
+			CargoService.InitPlayerCargo(player, profile.Boat.BoatId)
+		end
+		s2c.BoatSpawned:FireClient(player, BoatService.GetBoat(player))
 	end
 	return success, data
 end
 
 c2s.DespawnBoat.OnServerInvoke = function(player)
-	return BoatService.DespawnBoat(player)
+	return DockInteraction.ExitBoat(player)
 end
 
 c2s.EnterBoat.OnServerInvoke = function(player)
-	return BoatService.EnterBoat(player)
+	return DockInteraction.EnterBoat(player)
 end
 
 c2s.ExitBoat.OnServerInvoke = function(player)
-	return BoatService.ExitBoat(player)
+	return DockInteraction.ExitBoat(player)
 end
 
 c2s.RequestRepair.OnServerInvoke = function(player)

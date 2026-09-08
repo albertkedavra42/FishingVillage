@@ -11,74 +11,70 @@ local camera = workspace.CurrentCamera
 
 local currentMode = "ThirdPerson"
 local followTarget = nil
-local cameraOffset = Vector3.new(0, 15, 20)
-local lookAtOffset = Vector3.new(0, 0, -5)
+local followPosition = Vector3.new(0, 0, 0)
+local followHeading = 0
+
 local zoomLevel = 1.0
-local minZoom = 0.5
-local maxZoom = 2.0
-local rotationX = 0
-local rotationY = 0
-local isRotating = false
-local lastMousePosition = nil
 
 local CAMERA_CONFIG = {
-	ThirdPersonOffset = Vector3.new(0, 15, 20),
-	ThirdPersonLookAt = Vector3.new(0, 0, -5),
-	BoatOffset = Vector3.new(0, 12, 18),
-	BoatLookAt = Vector3.new(0, 0, -8),
-	FishingOffset = Vector3.new(0, 8, 12),
+	ThirdPersonOffset = Vector3.new(0, 12, 18),
+	ThirdPersonLookAt = Vector3.new(0, 0, -4),
+	BoatOffset = Vector3.new(0, 10, 16),
+	BoatLookAt = Vector3.new(0, 2, -6),
+	FishingOffset = Vector3.new(0, 8, 10),
 	FishingLookAt = Vector3.new(0, 2, 0),
-	VillageOffset = Vector3.new(0, 20, 25),
+	VillageOffset = Vector3.new(0, 18, 22),
 	VillageLookAt = Vector3.new(0, 0, 0),
-	SmoothSpeed = 8,
+	SmoothSpeed = 10,
 	MinZoom = 0.5,
 	MaxZoom = 2.5,
+	BoatCamSmoothing = 6,
 }
 
+local rotationX = 0
+local rotationY = 0
+local isRightMouseDown = false
+local lastMousePos = nil
+
 function CameraController.Init()
-	-- Handle mouse wheel for zoom
+	-- Zoom
 	UserInputService.InputChanged:Connect(function(input, gameProcessed)
-		if gameProcessed then
-			return
-		end
-
+		if gameProcessed then return end
 		if input.UserInputType == Enum.UserInputType.MouseWheel then
-			local delta = input.Position.Z
-			zoomLevel = math.clamp(zoomLevel - delta * 0.1, CAMERA_CONFIG.MinZoom, CAMERA_CONFIG.MaxZoom)
+			zoomLevel = math.clamp(
+				zoomLevel - input.Position.Z * 0.15,
+				CAMERA_CONFIG.MinZoom,
+				CAMERA_CONFIG.MaxZoom
+			)
 		end
 	end)
 
-	-- Handle right mouse drag for rotation
+	-- Right mouse rotate
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then
-			return
-		end
-
+		if gameProcessed then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton2 then
-			isRotating = true
-			lastMousePosition = Vector2.new(input.Position.X, input.Position.Y)
+			isRightMouseDown = true
+			lastMousePos = Vector2.new(input.Position.X, input.Position.Y)
 		end
 	end)
 
 	UserInputService.InputChanged:Connect(function(input, gameProcessed)
-		if isRotating and input.UserInputType == Enum.UserInputType.MouseMovement then
-			local currentPos = Vector2.new(input.Position.X, input.Position.Y)
-			local delta = currentPos - lastMousePosition
-
-			rotationX = rotationX + delta.X * 0.01
-			rotationY = math.clamp(rotationY + delta.Y * 0.01, -0.5, 0.5)
-
-			lastMousePosition = currentPos
+		if isRightMouseDown and input.UserInputType == Enum.UserInputType.MouseMovement then
+			local cur = Vector2.new(input.Position.X, input.Position.Y)
+			local delta = cur - (lastMousePos or cur)
+			rotationX = rotationX + delta.X * 0.008
+			rotationY = math.clamp(rotationY + delta.Y * 0.008, -0.6, 0.4)
+			lastMousePos = cur
 		end
 	end)
 
 	UserInputService.InputEnded:Connect(function(input, gameProcessed)
 		if input.UserInputType == Enum.UserInputType.MouseButton2 then
-			isRotating = false
+			isRightMouseDown = false
 		end
 	end)
 
-	-- Camera update loop
+	-- Camera update
 	RunService.RenderStepped:Connect(function(dt)
 		CameraController.Update(dt)
 	end)
@@ -87,42 +83,53 @@ function CameraController.Init()
 end
 
 function CameraController.Update(dt)
-	if not followTarget then
-		return
-	end
+	local targetPos
+	local targetLookAt
+	local offset
+	local lookAt
 
-	local targetPos = followTarget.Position
-	local targetCF = followTarget.CFrame
-
-	-- Calculate desired camera position
-	local offset = CAMERA_CONFIG.ThirdPersonOffset * zoomLevel
-	local lookAt = CAMERA_CONFIG.ThirdPersonLookAt
-
-	if currentMode == "Boat" then
+	if currentMode == "Boat" and followPosition then
 		offset = CAMERA_CONFIG.BoatOffset * zoomLevel
 		lookAt = CAMERA_CONFIG.BoatLookAt
-	elseif currentMode == "Fishing" then
+		targetPos = followPosition
+	elseif currentMode == "Fishing" and followPosition then
 		offset = CAMERA_CONFIG.FishingOffset * zoomLevel
 		lookAt = CAMERA_CONFIG.FishingLookAt
-	elseif currentMode == "Village" then
+		targetPos = followPosition
+	elseif currentMode == "Village" and followPosition then
 		offset = CAMERA_CONFIG.VillageOffset * zoomLevel
 		lookAt = CAMERA_CONFIG.VillageLookAt
+		targetPos = followPosition
+	else
+		offset = CAMERA_CONFIG.ThirdPersonOffset * zoomLevel
+		lookAt = CAMERA_CONFIG.ThirdPersonLookAt
+		targetPos = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+			and player.Character.HumanoidRootPart.Position
+			or Vector3.new(0, 5, 0)
 	end
+
+	if not targetPos then return end
 
 	-- Apply rotation
 	local rotatedOffset = CFrame.Angles(0, rotationX, 0) * CFrame.Angles(rotationY, 0, 0)
 	local finalOffset = rotatedOffset * CFrame.new(offset)
 
-	-- Smooth camera movement
 	local desiredPos = targetPos + finalOffset.Position
 	local desiredCF = CFrame.new(desiredPos, targetPos + lookAt)
 
-	camera.CFrame = camera.CFrame:Lerp(desiredCF, CAMERA_CONFIG.SmoothSpeed * dt)
+	-- Smooth camera
+	local smoothFactor = CAMERA_CONFIG.SmoothSpeed * dt
+	if currentMode == "Boat" then
+		smoothFactor = CAMERA_CONFIG.BoatCamSmoothing * dt
+	end
+	camera.CFrame = camera.CFrame:Lerp(desiredCF, math.clamp(smoothFactor, 0, 1))
 end
 
-function CameraController.FocusOnBoat(boatModel)
-	followTarget = boatModel
+function CameraController.FocusOnBoat(model)
+	followTarget = model
 	currentMode = "Boat"
+	rotationX = 0
+	rotationY = 0
 end
 
 function CameraController.FocusOnFishing(target)
@@ -136,11 +143,16 @@ function CameraController.FocusOnVillage(target)
 end
 
 function CameraController.ResetCamera()
-	followTarget = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	followTarget = nil
 	currentMode = "ThirdPerson"
 	rotationX = 0
 	rotationY = 0
 	zoomLevel = 1.0
+end
+
+function CameraController.UpdateBoatFollow(position: Vector3, heading: number)
+	followPosition = position
+	followHeading = heading
 end
 
 function CameraController.SetZoom(level: number)

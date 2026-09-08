@@ -11,17 +11,23 @@ local player = Players.LocalPlayer
 local currentBoat = nil
 local boatModel = nil
 local isDriving = false
-local moveDirection = Vector3.new(0, 0, 0)
+local moveInput = Vector2.new(0, 0)
+local currentSpeed = 0
+local currentHeading = 0
 
 local BOAT_CONFIG = {
-	TurnSpeed = 2,
-	Acceleration = 10,
-	MaxSpeed = 20,
+	MaxSpeed = 22,
+	Acceleration = 8,
+	Deceleration = 5,
+	TurnSpeed = 60,
 	WaterLevel = 0.5,
-	RockDamageCooldown = 2,
+	FuelConsumptionRate = 0.5,
+	CameraFollowDistance = 18,
+	CameraFollowHeight = 12,
+	CameraLookAhead = 8,
 }
 
-local lastRockDamageTime = 0
+local lastFuelTick = tick()
 
 function BoatController.Init()
 	local Remotes = require(ReplicatedStorage.Shared.Remotes)
@@ -35,43 +41,53 @@ function BoatController.Init()
 	end)
 
 	Remotes.GetServerToClient().BoatRepaired.OnClientEvent:Connect(function(boatData)
-		BoatController.OnBoatRepaired(boatData)
+		currentBoat = boatData
 	end)
 
-	-- Handle keyboard input for boat movement
-	UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then
-			return
+	Remotes.GetServerToClient().FuelChanged.OnClientEvent:Connect(function(fuel)
+		if currentBoat then
+			currentBoat.Fuel = fuel
 		end
+	end)
 
-		if isDriving then
+	Remotes.GetServerToClient().HullChanged.OnClientEvent:Connect(function(hull)
+		if currentBoat then
+			currentBoat.HullHealth = hull
+		end
+	end)
+
+	-- Keyboard input
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed or not isDriving then return end
+
+		if input.UserInputType == Enum.UserInputType.Keyboard then
 			if input.KeyCode == Enum.KeyCode.W then
-				moveDirection = Vector3.new(0, 0, -1)
+				moveInput = Vector2.new(moveInput.X, 1)
 			elseif input.KeyCode == Enum.KeyCode.S then
-				moveDirection = Vector3.new(0, 0, 1)
+				moveInput = Vector2.new(moveInput.X, -1)
 			elseif input.KeyCode == Enum.KeyCode.A then
-				moveDirection = Vector3.new(-1, 0, 0)
+				moveInput = Vector2.new(-1, moveInput.Y)
 			elseif input.KeyCode == Enum.KeyCode.D then
-				moveDirection = Vector3.new(1, 0, 0)
+				moveInput = Vector2.new(1, moveInput.Y)
+			elseif input.KeyCode == Enum.KeyCode.F then
+				BoatController.ExitBoat()
 			end
 		end
 	end)
 
 	UserInputService.InputEnded:Connect(function(input, gameProcessed)
-		if gameProcessed then
-			return
-		end
+		if gameProcessed or not isDriving then return end
 
-		if isDriving then
+		if input.UserInputType == Enum.UserInputType.Keyboard then
 			if input.KeyCode == Enum.KeyCode.W or input.KeyCode == Enum.KeyCode.S then
-				moveDirection = Vector3.new(moveDirection.X, 0, 0)
+				moveInput = Vector2.new(moveInput.X, 0)
 			elseif input.KeyCode == Enum.KeyCode.A or input.KeyCode == Enum.KeyCode.D then
-				moveDirection = Vector3.new(0, 0, moveDirection.Z)
+				moveInput = Vector2.new(0, moveInput.Y)
 			end
 		end
 	end)
 
-	-- Movement update loop
+	-- Movement loop
 	RunService.Heartbeat:Connect(function(dt)
 		if isDriving and boatModel then
 			BoatController.UpdateMovement(dt)
@@ -83,13 +99,7 @@ end
 
 function BoatController.SpawnBoat(boatId: string?)
 	local Remotes = require(ReplicatedStorage.Shared.Remotes)
-	local success, data = Remotes.GetClientToServer().SpawnBoat:InvokeServer(boatId)
-	return success, data
-end
-
-function BoatController.DespawnBoat()
-	local Remotes = require(ReplicatedStorage.Shared.Remotes)
-	return Remotes.GetClientToServer().DespawnBoat:InvokeServer()
+	return Remotes.GetClientToServer().SpawnBoat:InvokeServer(boatId)
 end
 
 function BoatController.EnterBoat()
@@ -97,7 +107,19 @@ function BoatController.EnterBoat()
 	local success = Remotes.GetClientToServer().EnterBoat:InvokeServer()
 	if success then
 		isDriving = true
-		-- Attach camera to boat
+		currentSpeed = 0
+		lastFuelTick = tick()
+
+		-- Find the boat model
+		boatModel = workspace:FindFirstChild("Boat_" .. player.UserId)
+		if boatModel then
+			local hull = boatModel:FindFirstChild("Hull")
+			if hull then
+				currentHeading = hull.Orientation.Y
+			end
+		end
+
+		-- Set camera to follow boat
 		local CameraController = require(script.Parent.CameraController)
 		CameraController.FocusOnBoat(boatModel)
 	end
@@ -105,94 +127,130 @@ function BoatController.EnterBoat()
 end
 
 function BoatController.ExitBoat()
+	if not isDriving then return false end
+
 	local Remotes = require(ReplicatedStorage.Shared.Remotes)
 	local success = Remotes.GetClientToServer().ExitBoat:InvokeServer()
 	if success then
 		isDriving = false
-		moveDirection = Vector3.new(0, 0, 0)
-		-- Reset camera
+		moveInput = Vector2.new(0, 0)
+		currentSpeed = 0
+
 		local CameraController = require(script.Parent.CameraController)
 		CameraController.ResetCamera()
 	end
 	return success
 end
 
-function BoatController.OnBoatSpawned(boatData)
-	currentBoat = boatData
-	-- Create boat model in workspace
-	-- This would create the actual 3D model
-	-- For now, just store the data
-end
-
-function BoatController.OnBoatDamaged(damageData)
-	-- Visual feedback for damage
-	if damageData.IsDisabled then
-		isDriving = false
-		local UIController = require(script.Parent.UIController)
-		UIController.ShowNotification("Boat disabled! Must return for repairs.")
-	end
-end
-
-function BoatController.OnBoatRepaired(boatData)
-	currentBoat = boatData
-	local UIController = require(script.Parent.UIController)
-	UIController.ShowNotification("Boat fully repaired!")
-end
-
 function BoatController.UpdateMovement(dt)
-	if not boatModel then
-		return
-	end
+	if not boatModel then return end
 
-	-- Calculate speed based on hull health
+	local hull = boatModel:FindFirstChild("Hull")
+	if not hull then return end
+
+	-- Calculate speed multiplier from hull health
 	local speedMult = 1.0
 	if currentBoat then
-		local BoatService = require(ReplicatedStorage.Shared.Config.BoatDefinitions)
-		local boatDef = BoatService.GetBoat(currentBoat.BoatId)
-		if boatDef then
-			speedMult = BoatController.GetSpeedMultiplier(currentBoat.HullHealth or 100)
+		speedMult = BoatController.GetSpeedMultiplier(currentBoat.HullHealth or 100)
+	end
+
+	-- Check fuel
+	if currentBoat and currentBoat.Fuel <= 0 then
+		speedMult = 0
+	end
+
+	-- Forward/backward movement
+	local targetSpeed = moveInput.Y * BOAT_CONFIG.MaxSpeed * speedMult
+	if targetSpeed ~= 0 then
+		currentSpeed = currentSpeed + (targetSpeed - currentSpeed) * BOAT_CONFIG.Acceleration * dt
+	else
+		currentSpeed = currentSpeed * (1 - BOAT_CONFIG.Deceleration * dt)
+		if math.abs(currentSpeed) < 0.1 then
+			currentSpeed = 0
 		end
 	end
 
-	local speed = BOAT_CONFIG.MaxSpeed * speedMult
-	local moveVector = moveDirection * speed * dt
+	-- Turning
+	local turnInput = moveInput.X
+	if turnInput ~= 0 and math.abs(currentSpeed) > 0.5 then
+		currentHeading = currentHeading + turnInput * BOAT_CONFIG.TurnSpeed * dt
+	end
 
-	-- Apply movement to boat model
-	boatModel.CFrame = boatModel.CFrame * CFrame.new(moveVector)
+	-- Calculate new position
+	local forward = Vector3.new(
+		math.sin(math.rad(currentHeading)),
+		0,
+		math.cos(math.rad(currentHeading))
+	)
 
-	-- Keep boat at water level
-	local pos = boatModel.Position
-	boatModel.Position = Vector3.new(pos.X, BOAT_CONFIG.WaterLevel, pos.Z)
+	local newPos = hull.Position + forward * currentSpeed * dt
+
+	-- Keep at water level with slight bob
+	local bobOffset = math.sin(tick() * 2) * 0.1
+	newPos = Vector3.new(newPos.X, BOAT_CONFIG.WaterLevel + bobOffset, newPos.Z)
+
+	-- Update hull position
+	hull.CFrame = CFrame.new(newPos) * CFrame.Angles(0, math.rad(currentHeading), 0)
+
+	-- Update all boat parts to follow hull
+	for _, part in boatModel:GetChildren() do
+		if part:IsA("BasePart") and part ~= hull then
+			local offset = part.Position - hull.Position
+			part.CFrame = CFrame.new(newPos + offset) * CFrame.Angles(0, math.rad(currentHeading), 0)
+		end
+	end
+
+	-- Consume fuel
+	local now = tick()
+	local fuelDt = now - lastFuelTick
+	if fuelDt >= 1 then
+		lastFuelTick = now
+		local fuelDrain = BOAT_CONFIG.FuelConsumptionRate * (math.abs(currentSpeed) / BOAT_CONFIG.MaxSpeed) * fuelDt
+		if currentBoat then
+			currentBoat.Fuel = math.max(0, currentBoat.Fuel - fuelDrain)
+			-- Server handles actual fuel consumption
+		end
+	end
+
+	-- Update camera
+	local CameraController = require(script.Parent.CameraController)
+	CameraController.UpdateBoatFollow(newPos, currentHeading)
 end
 
 function BoatController.GetSpeedMultiplier(hullHealth: number): number
-	if hullHealth > 70 then
-		return 1.0
-	elseif hullHealth > 40 then
-		return 0.8
-	elseif hullHealth > 15 then
-		return 0.5
-	else
-		return 0.2
+	if hullHealth > 70 then return 1.0
+	elseif hullHealth > 40 then return 0.8
+	elseif hullHealth > 15 then return 0.5
+	else return 0.2 end
+end
+
+function BoatController.OnBoatSpawned(boatData)
+	currentBoat = boatData
+	boatModel = workspace:FindFirstChild("Boat_" .. player.UserId)
+end
+
+function BoatController.OnBoatDamaged(damageData)
+	if damageData.IsDisabled then
+		isDriving = false
+		currentSpeed = 0
+		local UIController = require(script.Parent.UIController)
+		UIController.ShowNotification("Boat disabled! Return to dock for repairs.")
 	end
 end
 
 function BoatController.RequestRepair()
 	local Remotes = require(ReplicatedStorage.Shared.Remotes)
-	local result = Remotes.GetClientToServer().RequestRepair:InvokeServer()
-	return result
+	return Remotes.GetClientToServer().RequestRepair:InvokeServer()
 end
 
 function BoatController.RequestUpgrade(boatId: string)
 	local Remotes = require(ReplicatedStorage.Shared.Remotes)
-	local result = Remotes.GetClientToServer().RequestUpgrade:InvokeServer(boatId)
-	return result
+	return Remotes.GetClientToServer().RequestUpgrade:InvokeServer(boatId)
 end
 
 function BoatController.TravelToZone(zoneId: string)
 	local Remotes = require(ReplicatedStorage.Shared.Remotes)
-	local result = Remotes.GetClientToServer().TravelToZone:InvokeServer(zoneId)
-	return result
+	return Remotes.GetClientToServer().TravelToZone:InvokeServer(zoneId)
 end
 
 function BoatController.GetCurrentBoat()
@@ -203,17 +261,12 @@ function BoatController.IsDriving()
 	return isDriving
 end
 
-function BoatController.CheckRockCollision()
-	-- Simple collision check - would use raycasting in production
-	local now = tick()
-	if now - lastRockDamageTime < BOAT_CONFIG.RockDamageCooldown then
-		return
-	end
+function BoatController.GetSpeed()
+	return currentSpeed
+end
 
-	-- Check nearby rocks
-	-- This is a placeholder for actual collision detection
-	lastRockDamageTime = now
-	return true
+function BoatController.GetHeading()
+	return currentHeading
 end
 
 return BoatController
