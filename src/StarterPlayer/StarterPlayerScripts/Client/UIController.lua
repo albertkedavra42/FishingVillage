@@ -73,6 +73,22 @@ function UIController.Init()
 		UIController.ShowDisasterWarning(disasterData)
 	end)
 
+	Remotes.GetServerToClient().WeatherChanged.OnClientEvent:Connect(function(weatherData)
+		UIController.ShowNotification("Weather: " .. weatherData.Weather)
+	end)
+
+	Remotes.GetServerToClient().DisasterStarted.OnClientEvent:Connect(function(disasterData)
+		UIController.ShowNotification(disasterData.Type .. " has begun!")
+	end)
+
+	Remotes.GetServerToClient().DisasterEnded.OnClientEvent:Connect(function(disasterData)
+		UIController.ShowNotification(disasterData.Type .. " has passed.")
+	end)
+
+	Remotes.GetServerToClient().BoatSpawned.OnClientEvent:Connect(function(boatData)
+		UIController.UpdateZoneDisplay(boatData.CurrentZone or "Shallows")
+	end)
+
 	print("[UIController] Initialized")
 end
 
@@ -126,77 +142,221 @@ function UIController.UpdateHUD(profile)
 end
 
 function UIController.CreateHUD()
-	local screenGui, container = UIController.CreateHUD()
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "HUD"
+	screenGui.ResetOnSpawn = false
+	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+	local container = Instance.new("Frame")
+	container.Name = "Container"
+	container.Size = UDim2.new(0, 260, 0, 160)
+	container.Position = UDim2.new(0, 12, 0, 12)
+	container.BackgroundColor3 = UIConfig.Colors.DarkOverlay
+	container.BackgroundTransparency = 0.3
+	container.BorderSizePixel = 0
+	container.Parent = screenGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.MD)
+	corner.Parent = container
+
+	local layout = Instance.new("UIListLayout")
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 4)
+	layout.Parent = container
+
+	local padding = Instance.new("UIPadding")
+	padding.PaddingTop = UDim.new(0, 8)
+	padding.PaddingLeft = UDim.new(0, 10)
+	padding.PaddingRight = UDim.new(0, 10)
+	padding.Parent = container
+
+	local function CreateHUDRow(name: string, label: string, order: number): (Frame, TextLabel)
+		local row = Instance.new("Frame")
+		row.Name = name .. "Row"
+		row.Size = UDim2.new(1, 0, 0, 20)
+		row.BackgroundTransparency = 1
+		row.LayoutOrder = order
+		row.Parent = container
+
+		local labelText = Instance.new("TextLabel")
+		labelText.Size = UDim2.new(0.5, 0, 1, 0)
+		labelText.Position = UDim2.new(0, 0, 0, 0)
+		labelText.BackgroundTransparency = 1
+		labelText.Text = label
+		labelText.TextColor3 = UIConfig.Colors.Muted
+		labelText.TextSize = UIConfig.TextSizes.Body
+		labelText.Font = UIConfig.Fonts.Body
+		labelText.TextXAlignment = Enum.TextXAlignment.Left
+		labelText.Parent = row
+
+		local valueText = Instance.new("TextLabel")
+		valueText.Name = name .. "Value"
+		valueText.Size = UDim2.new(0.5, 0, 1, 0)
+		valueText.Position = UDim2.new(0.5, 0, 0, 0)
+		valueText.BackgroundTransparency = 1
+		valueText.Text = "--"
+		valueText.TextColor3 = UIConfig.Colors.White
+		valueText.TextSize = UIConfig.TextSizes.Body
+		valueText.Font = UIConfig.Fonts.Button
+		valueText.TextXAlignment = Enum.TextXAlignment.Right
+		valueText.Parent = row
+
+		return row, valueText
+	end
+
+	CreateHUDRow("Gold", "Gold:", 1)
+	CreateHUDRow("Salvage", "Salvage:", 2)
+	CreateHUDRow("Hull", "Hull:", 3)
+	CreateHUDRow("Fuel", "Fuel:", 4)
+	CreateHUDRow("Time", "Time:", 5)
+	CreateHUDRow("Zone", "Zone:", 6)
+	CreateHUDRow("Cargo", "Cargo:", 7)
+
+	screenGui.Parent = playerGui
+	screens["HUD"] = screenGui
 	return screenGui
 end
 
 function UIController.UpdateGold(amount: number)
-	local goldLabel = playerGui:FindFirstChild("HUD")
-	if goldLabel then
-		local goldText = goldLabel:FindFirstChild("Container")
-		if goldText then
-			local goldValue = goldText:FindFirstChild("GoldValue")
-			if goldValue then
-				goldValue.Text = tostring(amount)
+	local hud = playerGui:FindFirstChild("HUD")
+	if hud then
+		local container = hud:FindFirstChild("Container")
+		if container then
+			local row = container:FindFirstChild("GoldRow")
+			if row then
+				local goldValue = row:FindFirstChild("GoldValue")
+				if goldValue then
+					goldValue.Text = tostring(amount)
+				end
 			end
 		end
 	end
 end
 
 function UIController.UpdateSalvage(amount: number)
-	local salvageLabel = playerGui:FindFirstChild("HUD")
-	if salvageLabel then
-		local salvageText = salvageLabel:FindFirstChild("Container")
-		if salvageText then
-			local salvageValue = salvageText:FindFirstChild("SalvageValue")
-			if salvageValue then
-				salvageValue.Text = tostring(amount)
+	local hud = playerGui:FindFirstChild("HUD")
+	if hud then
+		local container = hud:FindFirstChild("Container")
+		if container then
+			local row = container:FindFirstChild("SalvageRow")
+			if row then
+				local salvageValue = row:FindFirstChild("SalvageValue")
+				if salvageValue then
+					salvageValue.Text = tostring(amount)
+				end
 			end
 		end
 	end
 end
 
 function UIController.UpdateHullDisplay(health: number)
-	local hullBar = playerGui:FindFirstChild("HUD")
-	if hullBar then
-		local hullContainer = hullBar:FindFirstChild("Container")
-		if hullContainer then
-			local hullValue = hullContainer:FindFirstChild("HullValue")
-			if hullValue then
-				hullValue.Text = tostring(math.floor(health)) .. "%"
+	local hud = playerGui:FindFirstChild("HUD")
+	if hud then
+		local container = hud:FindFirstChild("Container")
+		if container then
+			local row = container:FindFirstChild("HullRow")
+			if row then
+				local hullValue = row:FindFirstChild("HullValue")
+				if hullValue then
+					hullValue.Text = tostring(math.floor(health)) .. "%"
+					if health > 70 then
+						hullValue.TextColor3 = UIConfig.Colors.Success
+					elseif health > 40 then
+						hullValue.TextColor3 = UIConfig.Colors.Gold
+					elseif health > 15 then
+						hullValue.TextColor3 = UIConfig.Colors.Danger
+					else
+						hullValue.TextColor3 = UIConfig.Colors.Danger
+					end
+				end
 			end
 		end
 	end
 end
 
 function UIController.UpdateFuelDisplay(fuel: number)
-	local fuelBar = playerGui:FindFirstChild("HUD")
-	if fuelBar then
-		local fuelContainer = fuelBar:FindFirstChild("Container")
-		if fuelContainer then
-			local fuelValue = fuelContainer:FindFirstChild("FuelValue")
-			if fuelValue then
-				fuelValue.Text = tostring(math.floor(fuel))
+	local hud = playerGui:FindFirstChild("HUD")
+	if hud then
+		local container = hud:FindFirstChild("Container")
+		if container then
+			local row = container:FindFirstChild("FuelRow")
+			if row then
+				local fuelValue = row:FindFirstChild("FuelValue")
+				if fuelValue then
+					fuelValue.Text = tostring(math.floor(fuel))
+					if fuel > 50 then
+						fuelValue.TextColor3 = UIConfig.Colors.Success
+					elseif fuel > 20 then
+						fuelValue.TextColor3 = UIConfig.Colors.Gold
+					else
+						fuelValue.TextColor3 = UIConfig.Colors.Danger
+					end
+				end
 			end
 		end
 	end
 end
 
 function UIController.UpdateTimeDisplay(worldState)
-	local timeLabel = playerGui:FindFirstChild("HUD")
-	if timeLabel then
-		local timeContainer = timeLabel:FindFirstChild("Container")
-		if timeContainer then
-			local timeValue = timeContainer:FindFirstChild("TimeValue")
-			if timeValue then
-				timeValue.Text = worldState.TimeOfDay
+	local hud = playerGui:FindFirstChild("HUD")
+	if hud then
+		local container = hud:FindFirstChild("Container")
+		if container then
+			local row = container:FindFirstChild("TimeRow")
+			if row then
+				local timeValue = row:FindFirstChild("TimeValue")
+				if timeValue then
+					timeValue.Text = worldState.TimeOfDay
+					local timeColor = UIConfig.TimeOfDayColors[worldState.TimeOfDay]
+					if timeColor then
+						timeValue.TextColor3 = timeColor
+					end
+				end
+			end
+		end
+	end
+end
+
+function UIController.UpdateZoneDisplay(zoneName: string)
+	local hud = playerGui:FindFirstChild("HUD")
+	if hud then
+		local container = hud:FindFirstChild("Container")
+		if container then
+			local row = container:FindFirstChild("ZoneRow")
+			if row then
+				local zoneValue = row:FindFirstChild("ZoneValue")
+				if zoneValue then
+					zoneValue.Text = zoneName or "--"
+				end
 			end
 		end
 	end
 end
 
 function UIController.UpdateCargoDisplay(cargoData)
-	-- Update cargo grid UI
+	local hud = playerGui:FindFirstChild("HUD")
+	if hud then
+		local container = hud:FindFirstChild("Container")
+		if container then
+			local row = container:FindFirstChild("CargoRow")
+			if row then
+				local cargoValue = row:FindFirstChild("CargoValue")
+				if cargoValue then
+					local used = cargoData.Used or 0
+					local total = cargoData.Total or 0
+					cargoValue.Text = tostring(used) .. "/" .. tostring(total)
+					if used >= total then
+						cargoValue.TextColor3 = UIConfig.Colors.Danger
+					elseif used >= total * 0.8 then
+						cargoValue.TextColor3 = UIConfig.Colors.Gold
+					else
+						cargoValue.TextColor3 = UIConfig.Colors.White
+					end
+				end
+			end
+		end
+	end
 end
 
 function UIController.ShowNotification(message: string)
