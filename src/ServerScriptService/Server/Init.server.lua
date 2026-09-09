@@ -301,11 +301,44 @@ c2s.BuyItem.OnServerInvoke = function(player, itemId, quantity)
 	return { Success = true, Cost = totalCost }
 end
 
+-- ==========================================
+-- PLAYER STALLS
+-- ==========================================
+
+local PlayerStalls = {} -- [sellerId] = { { ItemRef, SpeciesId, Variant, Weight, Width, Height, Freshness, Value, Price, SellerName } }
+
+local function GetStallListings(sellerId)
+	return PlayerStalls[sellerId] or {}
+end
+
+local function AddStallListing(sellerId, listing)
+	if not PlayerStalls[sellerId] then
+		PlayerStalls[sellerId] = {}
+	end
+	table.insert(PlayerStalls[sellerId], listing)
+end
+
+local function RemoveStallListing(sellerId, itemRef)
+	local listings = PlayerStalls[sellerId]
+	if not listings then return false end
+	for i, listing in listings do
+		if listing.ItemRef == itemRef then
+			table.remove(listings, i)
+			return true
+		end
+	end
+	return false
+end
+
 -- Player Stall Remotes
 c2s.ListPlayerStall.OnServerInvoke = function(player, itemRef, price)
 	local cargo = CargoService.GetCargo(player)
 	if not cargo then
-		return { Success = false }
+		return { Success = false, Reason = "No cargo" }
+	end
+
+	if not price or price <= 0 then
+		return { Success = false, Reason = "Invalid price" }
 	end
 
 	-- Find item in cargo
@@ -313,25 +346,117 @@ c2s.ListPlayerStall.OnServerInvoke = function(player, itemRef, price)
 		if item.Ref == itemRef then
 			CargoService.RemoveItem(player, itemRef)
 			s2c.CargoUpdated:FireClient(player, CargoService.GetCargo(player))
-			return { Success = true, Listing = { ItemRef = itemRef, Price = price, Seller = player.Name } }
+
+			local listing = {
+				ItemRef = itemRef,
+				SpeciesId = item.SpeciesId,
+				ItemId = item.ItemId,
+				Variant = item.Variant or "Normal",
+				Weight = item.Weight,
+				Width = item.Width,
+				Height = item.Height,
+				Freshness = item.Freshness,
+				Value = item.Value,
+				Price = price,
+				SellerId = player.UserId,
+				SellerName = player.Name,
+			}
+
+			AddStallListing(player.UserId, listing)
+
+			-- Notify all players of new listing
+			for _, p in Players:GetPlayers() do
+				s2c.ShowNotification:FireClient(p, player.Name .. " listed " .. (item.SpeciesId or item.ItemId) .. " for " .. price .. " Gold")
+			end
+
+			return { Success = true, Listing = listing }
 		end
 	end
 
-	return { Success = false, Reason = "Item not found" }
+	return { Success = false, Reason = "Item not found in cargo" }
 end
 
 c2s.RemoveStallListing.OnServerInvoke = function(player, itemRef)
-	return { Success = true }
+	local removed = RemoveStallListing(player.UserId, itemRef)
+	return { Success = removed }
 end
 
 c2s.BuyFromPlayerStall.OnServerInvoke = function(player, sellerId, itemRef, price)
 	local profile = PlayerDataService.GetProfile(player)
-	if not profile or profile.Gold < price then
+	if not profile then
+		return { Success = false, Reason = "No profile" }
+	end
+
+	if profile.Gold < price then
 		return { Success = false, Reason = "Not enough gold" }
 	end
 
+	-- Find the listing
+	local listings = GetStallListings(sellerId)
+	local listing = nil
+	for _, l in listings do
+		if l.ItemRef == itemRef then
+			listing = l
+			break
+		end
+	end
+
+	if not listing then
+		return { Success = false, Reason = "Listing not found" }
+	end
+
+	-- Deduct gold from buyer
 	PlayerDataService.UpdateGold(player, -price)
 	s2c.GoldChanged:FireClient(player, profile.Gold)
+
+	-- Give gold to seller
+	local sellerProfile = nil
+	for _, p in Players:GetPlayers() do
+		if p.UserId == sellerId then
+			sellerProfile = PlayerDataService.GetProfile(p)
+			if sellerProfile then
+				PlayerDataService.UpdateGold(p, price)
+				s2c.GoldChanged:FireClient(p, sellerProfile.Gold)
+			end
+			break
+		end
+	end
+
+	-- Place fish in buyer's cargo
+	local placed = CargoService.PlaceItem(
+		player,
+		listing.ItemId or listing.SpeciesId,
+		listing.SpeciesId,
+		listing.Variant,
+		listing.Width,
+		listing.Height,
+		listing.Weight,
+		listing.Value,
+		listing.Freshness
+	)
+
+	if not placed then
+		-- Refund buyer if cargo full
+		PlayerDataService.UpdateGold(player, price)
+		s2c.GoldChanged:FireClient(player, profile.Gold)
+		if sellerProfile then
+			PlayerDataService.UpdateGold(Players:GetPlayerById(sellerId), -price)
+		end
+		return { Success = false, Reason = "Your cargo is full" }
+	end
+
+	-- Remove listing
+	RemoveStallListing(sellerId, itemRef)
+
+	-- Update buyer's cargo display
+	s2c.CargoUpdated:FireClient(player, CargoService.GetCargo(player))
+
+	-- Notify both players
+	s2c.ShowNotification:FireClient(player, "Purchased " .. (listing.SpeciesId or listing.ItemId) .. " for " .. price .. " Gold!")
+	local sellerPlayer = Players:GetPlayerById(sellerId)
+	if sellerPlayer then
+		s2c.ShowNotification:FireClient(sellerPlayer, player.Name .. " bought your " .. (listing.SpeciesId or listing.ItemId) .. " for " .. price .. " Gold!")
+	end
 
 	return { Success = true }
 end
