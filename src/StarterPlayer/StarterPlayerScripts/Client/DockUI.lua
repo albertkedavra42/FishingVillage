@@ -113,6 +113,11 @@ function DockUI.OpenVillageMenu()
 		DockUI.OpenShipwrightUI()
 	end)
 
+	CreateMenuButton("Village Projects", Color3.fromHex("#5C6BC0"), 286).MouseButton1Click:Connect(function()
+		DockUI.Close()
+		DockUI.OpenProjectBoardUI()
+	end)
+
 	local closeBtn = CreateMenuButton("Close", UIConfig.Colors.Muted, 340)
 	closeBtn.TextXAlignment = Enum.TextXAlignment.Center
 	closeBtn.MouseButton1Click:Connect(function()
@@ -537,6 +542,233 @@ end
 
 function DockUI.OpenRepairUI()
 	DockUI.OpenShipwrightUI()
+end
+
+-- ==========================================
+-- VILLAGE PROJECT BOARD UI
+-- ==========================================
+
+function DockUI.OpenProjectBoardUI()
+	isUIOpen = true
+
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "ProjectBoardUI"
+	screenGui.ResetOnSpawn = false
+
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(0, 520, 0, 500)
+	container.Position = UDim2.new(0.5, -260, 0.5, -250)
+	container.BackgroundColor3 = UIConfig.Colors.Background
+	container.BorderSizePixel = 0
+	container.Parent = screenGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.LG)
+	corner.Parent = container
+
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.new(1, 0, 0, 50)
+	title.BackgroundTransparency = 1
+	title.Text = "Village Projects"
+	title.TextColor3 = UIConfig.Colors.Text
+	title.TextSize = UIConfig.TextSizes.HeaderLarge
+	title.Font = UIConfig.Fonts.Header
+	title.Parent = container
+
+	local subtitle = Instance.new("TextLabel")
+	subtitle.Size = UDim2.new(1, -40, 0, 20)
+	subtitle.Position = UDim2.new(0, 20, 0, 48)
+	subtitle.BackgroundTransparency = 1
+	subtitle.Text = "Contribute Gold and Salvage to unlock new areas"
+	subtitle.TextColor3 = UIConfig.Colors.Muted
+	subtitle.TextSize = UIConfig.TextSizes.Small
+	subtitle.Font = UIConfig.Fonts.Body
+	subtitle.TextXAlignment = Enum.TextXAlignment.Left
+	subtitle.Parent = container
+
+	local projects = {
+		{ Id = "Lighthouse", Name = "Lighthouse", Desc = "Improves night fishing", GoldReq = 2000, SalvageReq = 10, Color = Color3.fromHex("#FFB74D") },
+		{ Id = "Shipyard", Name = "Shipyard", Desc = "Unlocks Coastal Boat + Estuary", GoldReq = 3000, SalvageReq = 20, Color = Color3.fromHex("#8B7355") },
+		{ Id = "HarborExpansion", Name = "Harbor Expansion", Desc = "Unlocks Open Sea + Commercial Boat", GoldReq = 5000, SalvageReq = 30, Color = Color3.fromHex("#5C6BC0") },
+	}
+
+	for i, proj in projects do
+		local card = Instance.new("Frame")
+		card.Size = UDim2.new(1, -40, 0, 120)
+		card.Position = UDim2.new(0, 20, 0, 75 + (i - 1) * 130)
+		card.BackgroundColor3 = UIConfig.Colors.White
+		card.BorderSizePixel = 0
+		card.Parent = container
+
+		local cardCorner = Instance.new("UICorner")
+		cardCorner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
+		cardCorner.Parent = card
+
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.new(0.7, 0, 0, 24)
+		nameLabel.Position = UDim2.new(0, 12, 0, 8)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Text = proj.Name
+		nameLabel.TextColor3 = proj.Color
+		nameLabel.TextSize = UIConfig.TextSizes.Subheader
+		nameLabel.Font = UIConfig.Fonts.Header
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+		nameLabel.Parent = card
+
+		local descLabel = Instance.new("TextLabel")
+		descLabel.Size = UDim2.new(0.7, 0, 0, 18)
+		descLabel.Position = UDim2.new(0, 12, 0, 32)
+		descLabel.BackgroundTransparency = 1
+		descLabel.Text = proj.Desc
+		descLabel.TextColor3 = UIConfig.Colors.Muted
+		descLabel.TextSize = UIConfig.TextSizes.Small
+		descLabel.Font = UIConfig.Fonts.Body
+		descLabel.TextXAlignment = Enum.TextXAlignment.Left
+		descLabel.Parent = card
+
+		-- Gold progress
+		local goldLabel = Instance.new("TextLabel")
+		goldLabel.Size = UDim2.new(0.45, 0, 0, 16)
+		goldLabel.Position = UDim2.new(0, 12, 0, 56)
+		goldLabel.BackgroundTransparency = 1
+		goldLabel.Text = "Gold: 0 / " .. proj.GoldReq
+		goldLabel.TextColor3 = UIConfig.Colors.Gold
+		goldLabel.TextSize = UIConfig.TextSizes.Small
+		goldLabel.Font = UIConfig.Fonts.Body
+		goldLabel.TextXAlignment = Enum.TextXAlignment.Left
+		goldLabel.Parent = card
+
+		local goldBarBg = Instance.new("Frame")
+		goldBarBg.Size = UDim2.new(0.45, 0, 0, 8)
+		goldBarBg.Position = UDim2.new(0, 12, 0, 74)
+		goldBarBg.BackgroundColor3 = Color3.fromHex("#E0E0E0")
+		goldBarBg.BorderSizePixel = 0
+		goldBarBg.Parent = card
+
+		local goldBarFill = Instance.new("Frame")
+		goldBarFill.Size = UDim2.new(0, 0, 1, 0)
+		goldBarFill.BackgroundColor3 = UIConfig.Colors.Gold
+		goldBarFill.BorderSizePixel = 0
+		goldBarFill.Parent = goldBarBg
+
+		local goldBarCorner = Instance.new("UICorner")
+		goldBarCorner.CornerRadius = UDim.new(0, 3)
+		goldBarCorner.Parent = goldBarBg
+
+		-- Salvage progress
+		local salvageLabel = Instance.new("TextLabel")
+		salvageLabel.Size = UDim2.new(0.45, 0, 0, 16)
+		salvageLabel.Position = UDim2.new(0.5, 0, 0, 56)
+		salvageLabel.BackgroundTransparency = 1
+		salvageLabel.Text = "Salvage: 0 / " .. proj.SalvageReq
+		salvageLabel.TextColor3 = UIConfig.Colors.Seafoam
+		salvageLabel.TextSize = UIConfig.TextSizes.Small
+		salvageLabel.Font = UIConfig.Fonts.Body
+		salvageLabel.TextXAlignment = Enum.TextXAlignment.Left
+		salvageLabel.Parent = card
+
+		local salvageBarBg = Instance.new("Frame")
+		salvageBarBg.Size = UDim2.new(0.45, 0, 0, 8)
+		salvageBarBg.Position = UDim2.new(0.5, 0, 0, 74)
+		salvageBarBg.BackgroundColor3 = Color3.fromHex("#E0E0E0")
+		salvageBarBg.BorderSizePixel = 0
+		salvageBarBg.Parent = card
+
+		local salvageBarFill = Instance.new("Frame")
+		salvageBarFill.Size = UDim2.new(0, 0, 1, 0)
+		salvageBarFill.BackgroundColor3 = UIConfig.Colors.Seafoam
+		salvageBarFill.BorderSizePixel = 0
+		salvageBarFill.Parent = salvageBarBg
+
+		local salvageBarCorner = Instance.new("UICorner")
+		salvageBarCorner.CornerRadius = UDim.new(0, 3)
+		salvageBarCorner.Parent = salvageBarBg
+
+		-- Contribute buttons
+		local contributeGoldBtn = Instance.new("TextButton")
+		contributeGoldBtn.Size = UDim2.new(0.22, 0, 0, 28)
+		contributeGoldBtn.Position = UDim2.new(0, 12, 0, 88)
+		contributeGoldBtn.BackgroundColor3 = UIConfig.Colors.Gold
+		contributeGoldBtn.Text = "+100 Gold"
+		contributeGoldBtn.TextColor3 = UIConfig.Colors.Text
+		contributeGoldBtn.TextSize = UIConfig.TextSizes.Small
+		contributeGoldBtn.Font = UIConfig.Fonts.Button
+		contributeGoldBtn.Parent = card
+
+		local cgCorner = Instance.new("UICorner")
+		cgCorner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
+		cgCorner.Parent = contributeGoldBtn
+
+		contributeGoldBtn.MouseButton1Click:Connect(function()
+			local result = Remotes.GetClientToServer().ContributeToProject:InvokeServer(proj.Id, 100, 0)
+			if result and result.Success then
+				local UIController = require(player.PlayerScripts.Client.UIController)
+				UIController.ShowNotification("Contributed 100 Gold to " .. proj.Name)
+			end
+		end)
+
+		local contributeSalvageBtn = Instance.new("TextButton")
+		contributeSalvageBtn.Size = UDim2.new(0.22, 0, 0, 28)
+		contributeSalvageBtn.Position = UDim2.new(0.25, 6, 0, 88)
+		contributeSalvageBtn.BackgroundColor3 = UIConfig.Colors.Seafoam
+		contributeSalvageBtn.Text = "+5 Salvage"
+		contributeSalvageBtn.TextColor3 = UIConfig.Colors.Text
+		contributeSalvageBtn.TextSize = UIConfig.TextSizes.Small
+		contributeSalvageBtn.Font = UIConfig.Fonts.Button
+		contributeSalvageBtn.Parent = card
+
+		local csCorner = Instance.new("UICorner")
+		csCorner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
+		csCorner.Parent = contributeSalvageBtn
+
+		contributeSalvageBtn.MouseButton1Click:Connect(function()
+			local result = Remotes.GetClientToServer().ContributeToProject:InvokeServer(proj.Id, 0, 5)
+			if result and result.Success then
+				local UIController = require(player.PlayerScripts.Client.UIController)
+				UIController.ShowNotification("Contributed 5 Salvage to " .. proj.Name)
+			end
+		end)
+
+		-- Listen for updates
+		Remotes.GetServerToClient().VillageProjectUpdated.OnClientEvent:Connect(function(data)
+			if data.ProjectId == proj.Id then
+				local goldPct = math.clamp(data.TotalGold / data.GoldRequired, 0, 1)
+				local salvagePct = math.clamp(data.TotalSalvage / data.SalvageRequired, 0, 1)
+				goldBarFill.Size = UDim2.new(goldPct, 0, 1, 0)
+				salvageBarFill.Size = UDim2.new(salvagePct, 0, 1, 0)
+				goldLabel.Text = "Gold: " .. data.TotalGold .. " / " .. data.GoldRequired
+				salvageLabel.Text = "Salvage: " .. data.TotalSalvage .. " / " .. data.SalvageRequired
+
+				if data.Completed then
+					nameLabel.Text = proj.Name .. " [COMPLETE]"
+					contributeGoldBtn.Visible = false
+					contributeSalvageBtn.Visible = false
+				end
+			end
+		end)
+	end
+
+	-- Close button
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Size = UDim2.new(1, -40, 0, 40)
+	closeBtn.Position = UDim2.new(0, 20, 1, -50)
+	closeBtn.BackgroundColor3 = UIConfig.Colors.Muted
+	closeBtn.Text = "Close"
+	closeBtn.TextColor3 = UIConfig.Colors.White
+	closeBtn.TextSize = UIConfig.TextSizes.Body
+	closeBtn.Font = UIConfig.Fonts.Button
+	closeBtn.Parent = container
+
+	local closeCorner = Instance.new("UICorner")
+	closeCorner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
+	closeCorner.Parent = closeBtn
+
+	closeBtn.MouseButton1Click:Connect(function()
+		DockUI.Close()
+	end)
+
+	screenGui.Parent = player.PlayerGui
+	currentScreen = screenGui
 end
 
 return DockUI
