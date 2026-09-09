@@ -620,46 +620,159 @@ local function GetProjectState(projectId)
 	}
 end
 
+-- ==========================================
+-- SMOKEHOUSE PROCESSING
+-- ==========================================
+
+local ItemDefinitions = require(ReplicatedStorage.Shared.Config.ItemDefinitions)
+
+local ProcessingQueue = {} -- [userId] = { { InputRef, InputSpeciesId, OutputItemId, StartedAt, Duration, Ready } }
+
+local PROCESSING_TIME = 30 -- seconds
+
+local function GetSmokedOutput(speciesId)
+	-- Map raw fish to smoked output
+	local outputMap = {
+		Cod = "SmokedCod",
+		Mackerel = "SmokedMackerel",
+		Moonfin = "SmokedMoonfin",
+	}
+	return outputMap[speciesId]
+end
+
 -- Smokehouse Remotes
 c2s.ProcessFish.OnServerInvoke = function(player, itemRef)
 	local cargo = CargoService.GetCargo(player)
 	if not cargo then
-		return { Success = false }
+		return { Success = false, Reason = "No cargo" }
 	end
 
+	-- Check if already processing
+	local queue = ProcessingQueue[player.UserId]
+	if queue and #queue > 0 then
+		for _, entry in queue do
+			if not entry.Ready then
+				return { Success = false, Reason = "Already processing another fish" }
+			end
+		end
+	end
+
+	-- Find item in cargo
 	for _, item in cargo.Items do
 		if item.Ref == itemRef then
 			-- Check if fish can be smoked
-			local FishDefinitions = require(ReplicatedStorage.Shared.Config.FishDefinitions)
 			local species = FishDefinitions.GetSpecies(item.SpeciesId)
 			if not species then
 				return { Success = false, Reason = "Cannot process this item" }
 			end
 
-			-- Remove raw fish, start processing
+			local outputItemId = GetSmokedOutput(item.SpeciesId)
+			if not outputItemId then
+				return { Success = false, Reason = "This fish cannot be smoked" }
+			end
+
+			local outputDef = ItemDefinitions.GetItem(outputItemId)
+			if not outputDef then
+				return { Success = false, Reason = "Output item not found" }
+			end
+
+			-- Remove raw fish from cargo
 			CargoService.RemoveItem(player, itemRef)
 			s2c.CargoUpdated:FireClient(player, CargoService.GetCargo(player))
 
-			-- Processing would be handled by a timer system
-			-- For now, immediately return smoked version
+			-- Start processing
+			if not ProcessingQueue[player.UserId] then
+				ProcessingQueue[player.UserId] = {}
+			end
+
+			local entry = {
+				InputRef = itemRef,
+				InputSpeciesId = item.SpeciesId,
+				OutputItemId = outputItemId,
+				OutputWidth = outputDef.GridWidth or 2,
+				OutputHeight = outputDef.GridHeight or 2,
+				Weight = item.Weight,
+				StartedAt = tick(),
+				Duration = PROCESSING_TIME,
+				Ready = false,
+			}
+
+			table.insert(ProcessingQueue[player.UserId], entry)
+
+			-- Notify client
+			s2c.ShowNotification:FireClient(player, "Processing " .. item.SpeciesId .. "...")
+
 			return {
 				Success = true,
-				ProcessingTime = 30, -- seconds
-				OutputItem = "Smoked" .. item.SpeciesId,
+				ProcessingTime = PROCESSING_TIME,
+				OutputItem = outputItemId,
 			}
 		end
 	end
 
-	return { Success = false, Reason = "Item not found" }
+	return { Success = false, Reason = "Item not found in cargo" }
 end
 
-c2s.CollectProcessed.OnServerInvoke = function(player, outputItem)
-	local placed = CargoService.PlaceItem(player, outputItem, nil, nil, 2, 2, 0, 0, 1.0)
-	if placed then
-		s2c.CargoUpdated:FireClient(player, CargoService.GetCargo(player))
+c2s.CollectProcessed.OnServerInvoke = function(player)
+	local queue = ProcessingQueue[player.UserId]
+	if not queue or #queue == 0 then
+		return { Success = false, Reason = "Nothing being processed" }
 	end
-	return { Success = placed }
+
+	-- Find first ready entry
+	for i, entry in queue do
+		if entry.Ready then
+			-- Place smoked fish in cargo
+			local placed = CargoService.PlaceItem(
+				player,
+				entry.OutputItemId,
+				entry.InputSpeciesId,
+				"Smoked",
+				entry.OutputWidth,
+				entry.OutputHeight,
+				entry.Weight,
+				0,
+				1.0
+			)
+
+			if placed then
+				table.remove(queue, i)
+				s2c.CargoUpdated:FireClient(player, CargoService.GetCargo(player))
+				s2c.ShowNotification:FireClient(player, "Collected " .. entry.OutputItemId .. "!")
+				return { Success = true, OutputItem = entry.OutputItemId }
+			else
+				return { Success = false, Reason = "Cargo full" }
+			end
+		end
+	end
+
+	return { Success = false, Reason = "Processing not complete yet" }
 end
+
+-- Check processing timers (called from world update loop)
+local function UpdateProcessing()
+	for userId, queue in ProcessingQueue do
+		for i = #queue, 1, -1 do
+			local entry = queue[i]
+			if not entry.Ready then
+				if tick() - entry.StartedAt >= entry.Duration then
+					entry.Ready = true
+					-- Notify player
+					local p = Players:GetPlayerById(userId)
+					if p then
+						s2c.ShowNotification:FireClient(p, entry.OutputItemId .. " is ready to collect!")
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Clean up on player leave
+Players.PlayerRemoving:Connect(function(player)
+	ProcessingQueue[player.UserId] = nil
+	PlayerStalls[player.UserId] = nil
+end)
 
 -- Museum Remotes
 c2s.DonateToMuseum.OnServerInvoke = function(player, speciesId, variant)
@@ -727,6 +840,9 @@ task.spawn(function()
 
 		-- Regenerate fish populations
 		FishingService.RegeneratePopulations(WORLD_TICK_RATE)
+
+		-- Update smokehouse processing timers
+		UpdateProcessing()
 
 		-- Update cargo freshness for all players
 		for _, player in Players:GetPlayers() do
