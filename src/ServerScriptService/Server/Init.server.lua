@@ -774,22 +774,67 @@ Players.PlayerRemoving:Connect(function(player)
 	PlayerStalls[player.UserId] = nil
 end)
 
--- Museum Remotes
-c2s.DonateToMuseum.OnServerInvoke = function(player, speciesId, variant)
+-- ==========================================
+-- MUSEUM / COLLECTION
+-- ==========================================
+
+local MuseumState = {
+	DonatedSpecies = {}, -- [speciesId] = true
+	DonatedVariants = {}, -- [speciesId_variant] = true
+	DonationCount = 0,
+}
+
+c2s.DonateToMuseum.OnServerInvoke = function(player, itemRef)
 	local cargo = CargoService.GetCargo(player)
 	if not cargo then
-		return { Success = false }
+		return { Success = false, Reason = "No cargo" }
 	end
 
 	-- Find matching fish in cargo
 	for _, item in cargo.Items do
-		if item.SpeciesId == speciesId and item.Variant == variant then
-			CargoService.RemoveItem(player, item.Ref)
-			PlayerDataService.AddDiscovery(player, "Species", speciesId)
-			PlayerDataService.AddDiscovery(player, "Variant", speciesId .. "_" .. variant)
+		if item.Ref == itemRef then
+			local speciesId = item.SpeciesId
+			local variant = item.Variant or "Normal"
+			local variantKey = speciesId .. "_" .. variant
+
+			-- Check if already donated
+			local isNewSpecies = not MuseumState.DonatedSpecies[speciesId]
+			local isNewVariant = not MuseumState.DonatedVariants[variantKey]
+
+			-- Remove from cargo
+			CargoService.RemoveItem(player, itemRef)
 			s2c.CargoUpdated:FireClient(player, CargoService.GetCargo(player))
-			s2c.NewDiscovery:FireClient(player, "MuseumDonation", speciesId)
-			return { Success = true }
+
+			-- Update museum state
+			MuseumState.DonatedSpecies[speciesId] = true
+			MuseumState.DonatedVariants[variantKey] = true
+			MuseumState.DonationCount = MuseumState.DonationCount + 1
+
+			-- Update player collection
+			PlayerDataService.AddDiscovery(player, "Species", speciesId)
+			PlayerDataService.AddDiscovery(player, "Variant", variantKey)
+
+			-- Notify player
+			if isNewSpecies or isNewVariant then
+				s2c.NewDiscovery:FireClient(player, "MuseumDonation", speciesId)
+				local msg = "New museum donation: " .. speciesId
+				if variant ~= "Normal" then
+					msg = msg .. " (" .. variant .. ")"
+				end
+				s2c.ShowNotification:FireClient(player, msg .. "!")
+			else
+				s2c.ShowNotification:FireClient(player, "Donated " .. speciesId .. " to the museum.")
+			end
+
+			-- Track stat
+			PlayerDataService.IncrementStat(player, "MuseumDonations")
+
+			return {
+				Success = true,
+				IsNewSpecies = isNewSpecies,
+				IsNewVariant = isNewVariant,
+				DonationCount = MuseumState.DonationCount,
+			}
 		end
 	end
 
