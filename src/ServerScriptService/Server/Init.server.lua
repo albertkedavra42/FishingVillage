@@ -336,6 +336,79 @@ c2s.BuyFromPlayerStall.OnServerInvoke = function(player, sellerId, itemRef, pric
 	return { Success = true }
 end
 
+-- ==========================================
+-- VILLAGE PROJECTS
+-- ==========================================
+
+local VillageProjects = {
+	Lighthouse = {
+		ProjectId = "Lighthouse",
+		DisplayName = "Lighthouse",
+		Description = "Improves night fishing and navigation.",
+		GoldRequired = 2000,
+		SalvageRequired = 10,
+		UnlocksZone = nil,
+		Completed = false,
+		TotalGold = 0,
+		TotalSalvage = 0,
+	},
+	Shipyard = {
+		ProjectId = "Shipyard",
+		DisplayName = "Shipyard",
+		Description = "Unlocks better repairs and the Coastal Fishing Boat.",
+		GoldRequired = 3000,
+		SalvageRequired = 20,
+		UnlocksZone = "Estuary",
+		Completed = false,
+		TotalGold = 0,
+		TotalSalvage = 0,
+	},
+	HarborExpansion = {
+		ProjectId = "HarborExpansion",
+		DisplayName = "Harbor Expansion",
+		Description = "Unlocks the Open Sea and Commercial Fishing Boat.",
+		GoldRequired = 5000,
+		SalvageRequired = 30,
+		UnlocksZone = "OpenSea",
+		Completed = false,
+		TotalGold = 0,
+		TotalSalvage = 0,
+	},
+}
+
+local function CheckProjectCompletion(projectId)
+	local project = VillageProjects[projectId]
+	if not project or project.Completed then
+		return false
+	end
+
+	if project.TotalGold >= project.GoldRequired and project.TotalSalvage >= project.SalvageRequired then
+		project.Completed = true
+
+		-- Unlock zone for all players
+		if project.UnlocksZone then
+			for _, p in Players:GetPlayers() do
+				PlayerDataService.UnlockZone(p, project.UnlocksZone)
+			end
+		end
+
+		-- Notify all players
+		for _, p in Players:GetPlayers() do
+			s2c.VillageProjectCompleted:FireClient(p, {
+				ProjectId = projectId,
+				DisplayName = project.DisplayName,
+				UnlocksZone = project.UnlocksZone,
+			})
+			s2c.ShowNotification:FireClient(p, project.DisplayName .. " has been completed!")
+		end
+
+		print("[VillageProjects] " .. project.DisplayName .. " completed!")
+		return true
+	end
+
+	return false
+end
+
 -- Village Project Remotes
 c2s.ContributeToProject.OnServerInvoke = function(player, projectId, goldAmount, salvageAmount)
 	local profile = PlayerDataService.GetProfile(player)
@@ -343,33 +416,83 @@ c2s.ContributeToProject.OnServerInvoke = function(player, projectId, goldAmount,
 		return { Success = false }
 	end
 
-	if goldAmount and profile.Gold < goldAmount then
-		return { Success = false, Reason = "Not enough gold" }
+	local project = VillageProjects[projectId]
+	if not project then
+		return { Success = false, Reason = "Invalid project" }
 	end
 
-	if salvageAmount and profile.Salvage < salvageAmount then
-		return { Success = false, Reason = "Not enough salvage" }
+	if project.Completed then
+		return { Success = false, Reason = "Already completed" }
 	end
 
-	if goldAmount then
+	if goldAmount and goldAmount > 0 then
+		if profile.Gold < goldAmount then
+			return { Success = false, Reason = "Not enough gold" }
+		end
 		PlayerDataService.UpdateGold(player, -goldAmount)
 		s2c.GoldChanged:FireClient(player, profile.Gold)
+		project.TotalGold = project.TotalGold + goldAmount
 	end
 
-	if salvageAmount then
+	if salvageAmount and salvageAmount > 0 then
+		if profile.Salvage < salvageAmount then
+			return { Success = false, Reason = "Not enough salvage" }
+		end
 		PlayerDataService.UpdateSalvage(player, -salvageAmount)
 		s2c.SalvageChanged:FireClient(player, profile.Salvage)
+		project.TotalSalvage = project.TotalSalvage + salvageAmount
 	end
 
-	-- Track contribution
+	-- Track personal contribution
 	profile.Progression.VillageContributions[projectId] = (profile.Progression.VillageContributions[projectId] or 0) + (goldAmount or 0) + (salvageAmount or 0)
 
+	-- Send progress update to contributing player
 	s2c.VillageProjectUpdated:FireClient(player, {
 		ProjectId = projectId,
-		Contribution = profile.Progression.VillageContributions[projectId],
+		DisplayName = project.DisplayName,
+		TotalGold = project.TotalGold,
+		GoldRequired = project.GoldRequired,
+		TotalSalvage = project.TotalSalvage,
+		SalvageRequired = project.SalvageRequired,
+		Completed = project.Completed,
 	})
 
+	-- Broadcast progress to all players
+	for _, p in Players:GetPlayers() do
+		if p ~= player then
+			s2c.VillageProjectUpdated:FireClient(p, {
+				ProjectId = projectId,
+				DisplayName = project.DisplayName,
+				TotalGold = project.TotalGold,
+				GoldRequired = project.GoldRequired,
+				TotalSalvage = project.TotalSalvage,
+				SalvageRequired = project.SalvageRequired,
+				Completed = project.Completed,
+			})
+		end
+	end
+
+	-- Check if project is now complete
+	CheckProjectCompletion(projectId)
+
 	return { Success = true }
+end
+
+-- Function to get project state (for UI)
+local function GetProjectState(projectId)
+	local project = VillageProjects[projectId]
+	if not project then return nil end
+	return {
+		ProjectId = project.ProjectId,
+		DisplayName = project.DisplayName,
+		Description = project.Description,
+		TotalGold = project.TotalGold,
+		GoldRequired = project.GoldRequired,
+		TotalSalvage = project.TotalSalvage,
+		SalvageRequired = project.SalvageRequired,
+		Completed = project.Completed,
+		UnlocksZone = project.UnlocksZone,
+	}
 end
 
 -- Smokehouse Remotes
