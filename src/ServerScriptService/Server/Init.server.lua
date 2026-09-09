@@ -133,6 +133,19 @@ c2s.CastLine.OnServerInvoke = function(player, zoneId, spotId, method)
 
 	local biteTime = FishingService.CalculateBiteTime(zoneId, WorldService.GetCurrentTimePhase(), method)
 
+	-- Fire FishBite event to client after delay
+	task.delay(biteTime, function()
+		-- Verify player is still fishing
+		local active = FishingService.GetActiveFishing(player)
+		if active then
+			s2c.FishBite:FireClient(player, {
+				ZoneId = zoneId,
+				SpotId = spotId,
+				Method = method,
+			})
+		end
+	end)
+
 	return {
 		Success = true,
 		BiteTime = biteTime,
@@ -169,6 +182,7 @@ c2s.ReelIn.OnServerInvoke = function(player, success)
 	local speciesDef = FishDefs.GetSpecies(catch.SpeciesId)
 	local baseValue = speciesDef and speciesDef.BaseValue or 10
 	local value = math.floor(baseValue * (variantMod and variantMod.ValueMultiplier or 1))
+	local decayRate = speciesDef and speciesDef.FreshnessDecayRate or 0.5
 
 	-- Try to place in cargo
 	local placed = CargoService.PlaceItem(
@@ -180,7 +194,8 @@ c2s.ReelIn.OnServerInvoke = function(player, success)
 		catch.Size[2],
 		catch.Weight,
 		value,
-		1.0
+		1.0,
+		decayRate
 	)
 
 	if not placed then
@@ -661,7 +676,8 @@ c2s.ProcessFish.OnServerInvoke = function(player, itemRef)
 	for _, item in cargo.Items do
 		if item.Ref == itemRef then
 			-- Check if fish can be smoked
-			local species = FishDefinitions.GetSpecies(item.SpeciesId)
+			local FishDefs = require(ReplicatedStorage.Shared.Config.FishDefinitions)
+			local species = FishDefs.GetSpecies(item.SpeciesId)
 			if not species then
 				return { Success = false, Reason = "Cannot process this item" }
 			end
@@ -747,6 +763,40 @@ c2s.CollectProcessed.OnServerInvoke = function(player)
 	end
 
 	return { Success = false, Reason = "Processing not complete yet" }
+end
+
+-- Ice/Supply Activation
+c2s.ActivateIce.OnServerInvoke = function(player, itemId)
+	local profile = PlayerDataService.GetProfile(player)
+	if not profile then
+		return { Success = false, Reason = "No profile" }
+	end
+
+	local ItemDefinitions = require(ReplicatedStorage.Shared.Config.ItemDefinitions)
+	local itemDef = ItemDefinitions.GetItem(itemId)
+	if not itemDef or itemDef.Category ~= "Supply" then
+		return { Success = false, Reason = "Invalid supply item" }
+	end
+
+	-- Check if player owns this item (simplified: deduct gold, apply effect)
+	if profile.Gold < itemDef.BaseValue then
+		return { Success = false, Reason = "Not enough gold" }
+	end
+
+	PlayerDataService.UpdateGold(player, -itemDef.BaseValue)
+	s2c.GoldChanged:FireClient(player, profile.Gold)
+
+	-- Activate ice effect on cargo
+	local success = CargoService.ActivateIce(player, itemId)
+	if success then
+		s2c.ShowNotification:FireClient(player, itemDef.DisplayName .. " activated! Decay reduced for " .. tostring(math.floor(itemDef.Duration / 60)) .. " minutes.")
+		return { Success = true, Duration = itemDef.Duration, Modifier = itemDef.FreshnessModifier }
+	else
+		-- Refund if activation failed
+		PlayerDataService.UpdateGold(player, itemDef.BaseValue)
+		s2c.GoldChanged:FireClient(player, profile.Gold)
+		return { Success = false, Reason = "Could not activate" }
+	end
 end
 
 -- Check processing timers (called from world update loop)
@@ -840,6 +890,178 @@ c2s.DonateToMuseum.OnServerInvoke = function(player, itemRef)
 
 	return { Success = false, Reason = "Fish not found in cargo" }
 end
+
+-- ==========================================
+-- NPC ORDER BOARD
+-- ==========================================
+
+local OrderBoard = {
+	ActiveOrders = {}, -- [orderId] = order data
+	AcceptedOrders = {}, -- [playerId] = { orderId, acceptedAt }
+	OrderCounter = 0,
+}
+
+local ORDER_TEMPLATES = {
+	{ SpeciesId = "Cod", MinQty = 5, MaxQty = 15, BaseReward = 80, TimeLimit = 600 },
+	{ SpeciesId = "Sardine", MinQty = 8, MaxQty = 20, BaseReward = 60, TimeLimit = 600 },
+	{ SpeciesId = "Mackerel", MinQty = 5, MaxQty = 12, BaseReward = 120, TimeLimit = 600 },
+	{ SpeciesId = "Flatfish", MinQty = 3, MaxQty = 10, BaseReward = 100, TimeLimit = 600 },
+	{ SpeciesId = "Moonfin", MinQty = 2, MaxQty = 5, BaseReward = 300, TimeLimit = 900 },
+	{ SpeciesId = "Sea Bass", MinQty = 3, MaxQty = 8, BaseReward = 200, TimeLimit = 600 },
+	{ SpeciesId = "Eel", MinQty = 2, MaxQty = 6, BaseReward = 250, TimeLimit = 600 },
+	{ SpeciesId = "Crab", MinQty = 5, MaxQty = 15, BaseReward = 150, TimeLimit = 600 },
+	{ SpeciesId = "Tuna", MinQty = 2, MaxQty = 5, BaseReward = 400, TimeLimit = 900 },
+	{ SpeciesId = "Swordfish", MinQty = 1, MaxQty = 3, BaseReward = 500, TimeLimit = 900 },
+}
+
+local RESTAURANT_NAMES = {
+	"The Salty Anchor", "Harbor View Diner", "Moonfin Kitchen", "The Fisherman's Rest",
+	"Dockside Grill", "Deep Sea Bistro", "Coastal Catch Café", "Trawler's Table",
+}
+
+local function GenerateOrder()
+	local template = ORDER_TEMPLATES[math.random(1, #ORDER_TEMPLATES)]
+	local quantity = math.random(template.MinQty, template.MaxQty)
+	local reward = math.floor(template.BaseReward * (quantity / template.MinQty))
+
+	OrderBoard.OrderCounter += 1
+	return {
+		OrderId = "Order_" .. OrderBoard.OrderCounter,
+		RestaurantName = RESTAURANT_NAMES[math.random(1, #RESTAURANT_NAMES)],
+		SpeciesId = template.SpeciesId,
+		Quantity = quantity,
+		Reward = reward,
+		TimeLimit = template.TimeLimit,
+		CreatedAt = tick(),
+		ExpiresAt = tick() + template.TimeLimit,
+	}
+end
+
+local function RefreshOrders()
+	-- Remove expired orders
+	for orderId, order in OrderBoard.ActiveOrders do
+		if tick() > order.ExpiresAt then
+			OrderBoard.ActiveOrders[orderId] = nil
+		end
+	end
+
+	-- Generate new orders if needed
+	while #OrderBoard.ActiveOrders < 5 do
+		local order = GenerateOrder()
+		OrderBoard.ActiveOrders[order.OrderId] = order
+	end
+end
+
+-- Generate initial orders
+RefreshOrders()
+
+-- Refresh orders periodically
+task.spawn(function()
+	while true do
+		task.wait(60)
+		RefreshOrders()
+	end
+end)
+
+c2s.GetOrders.OnServerInvoke = function(player)
+	RefreshOrders()
+	local orders = {}
+	for _, order in OrderBoard.ActiveOrders do
+		table.insert(orders, order)
+	end
+	return { Success = true, Orders = orders }
+end
+
+c2s.AcceptOrder.OnServerInvoke = function(player, orderId)
+	local order = OrderBoard.ActiveOrders[orderId]
+	if not order then
+		return { Success = false, Reason = "Order not found" }
+	end
+
+	if tick() > order.ExpiresAt then
+		OrderBoard.ActiveOrders[orderId] = nil
+		return { Success = false, Reason = "Order expired" }
+	end
+
+	-- Check if player already has an order
+	if OrderBoard.AcceptedOrders[player.UserId] then
+		return { Success = false, Reason = "You already have an active order" }
+	end
+
+	OrderBoard.AcceptedOrders[player.UserId] = {
+		OrderId = orderId,
+		AcceptedAt = tick(),
+	}
+
+	s2c.ShowNotification:FireClient(player, "Order accepted: " .. order.Quantity .. "x " .. order.SpeciesId .. " for " .. order.Reward .. " Gold")
+	return { Success = true, Order = order }
+end
+
+c2s.FulfillOrder.OnServerInvoke = function(player)
+	local accepted = OrderBoard.AcceptedOrders[player.UserId]
+	if not accepted then
+		return { Success = false, Reason = "No active order" }
+	end
+
+	local order = OrderBoard.ActiveOrders[accepted.OrderId]
+	if not order then
+		OrderBoard.AcceptedOrders[player.UserId] = nil
+		return { Success = false, Reason = "Order no longer available" }
+	end
+
+	if tick() > order.ExpiresAt then
+		OrderBoard.ActiveOrders[accepted.OrderId] = nil
+		OrderBoard.AcceptedOrders[player.UserId] = nil
+		return { Success = false, Reason = "Order expired" }
+	end
+
+	-- Count matching fish in cargo
+	local cargo = CargoService.GetCargo(player)
+	if not cargo then
+		return { Success = false, Reason = "No cargo" }
+	end
+
+	local matchingFish = {}
+	for _, item in cargo.Items do
+		if item.SpeciesId == order.SpeciesId then
+			table.insert(matchingFish, item)
+		end
+	end
+
+	if #matchingFish < order.Quantity then
+		return { Success = false, Reason = "Need " .. order.Quantity .. "x " .. order.SpeciesId .. " (have " .. #matchingFish .. ")" }
+	end
+
+	-- Remove fish from cargo (take the required amount)
+	local removed = 0
+	for i = #matchingFish, 1, -1 do
+		if removed >= order.Quantity then
+			break
+		end
+		CargoService.RemoveItem(player, matchingFish[i].Ref)
+		removed += 1
+	end
+
+	-- Pay reward
+	PlayerDataService.UpdateGold(player, order.Reward)
+	s2c.GoldChanged:FireClient(player, PlayerDataService.GetProfile(player).Gold)
+	s2c.CargoUpdated:FireClient(player, CargoService.GetCargo(player))
+
+	-- Clear order
+	OrderBoard.ActiveOrders[accepted.OrderId] = nil
+	OrderBoard.AcceptedOrders[player.UserId] = nil
+
+	-- Track stat
+	PlayerDataService.IncrementStat(player, "OrdersCompleted")
+
+	s2c.ShowNotification:FireClient(player, "Order fulfilled! Earned " .. order.Reward .. " Gold!")
+	return { Success = true, Reward = order.Reward }
+end
+
+-- Clean up orders on player leave
+Players.PlayerRemoving:Connect(function(player)
+	OrderBoard.AcceptedOrders[player.UserId] = nil
+end)
 
 -- Navigation Remotes
 c2s.TravelToZone.OnServerInvoke = function(player, zoneId)

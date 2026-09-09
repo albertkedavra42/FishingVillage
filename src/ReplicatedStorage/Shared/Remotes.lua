@@ -122,11 +122,19 @@ function Remotes.Init()
 	c2s.ProcessFish = CreateRemoteFunction(clientToServer, "ProcessFish")
 	c2s.CollectProcessed = CreateRemoteFunction(clientToServer, "CollectProcessed")
 
+	-- Supplies
+	c2s.ActivateIce = CreateRemoteFunction(clientToServer, "ActivateIce")
+
 	-- Museum
 	c2s.DonateToMuseum = CreateRemoteFunction(clientToServer, "DonateToMuseum")
 
 	-- Navigation
 	c2s.TravelToZone = CreateRemoteFunction(clientToServer, "TravelToZone")
+
+	-- Orders
+	c2s.GetOrders = CreateRemoteFunction(clientToServer, "GetOrders")
+	c2s.AcceptOrder = CreateRemoteFunction(clientToServer, "AcceptOrder")
+	c2s.FulfillOrder = CreateRemoteFunction(clientToServer, "FulfillOrder")
 
 	-- ==========================================
 	-- CLIENT → SERVER EVENTS (for fire-and-forget)

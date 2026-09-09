@@ -17,10 +17,14 @@ local playerCargo: { [number]: {
 		Width: number,
 		Height: number,
 		Freshness: number,
+		FreshnessDecayRate: number,
 		Value: number,
 		PlacedAt: number,
 	} },
 	MaxCapacity: number,
+	IceActive: boolean?,
+	IceModifier: number?,
+	IceExpiresAt: number?,
 } } = {}
 
 function CargoService.Init()
@@ -82,7 +86,7 @@ function CargoService.CanPlaceAt(player: Player, x: number, y: number, width: nu
 end
 
 function CargoService.PlaceItem(player: Player, itemId: string, speciesId: string?, variant: string?,
-	width: number, height: number, weight: number, value: number, freshness: number): boolean
+	width: number, height: number, weight: number, value: number, freshness: number, freshnessDecayRate: number?): boolean
 	local cargo = playerCargo[player.UserId]
 	if not cargo then
 		return false
@@ -110,6 +114,7 @@ function CargoService.PlaceItem(player: Player, itemId: string, speciesId: strin
 					Width = width,
 					Height = height,
 					Freshness = freshness,
+					FreshnessDecayRate = freshnessDecayRate or 0.5,
 					Value = value,
 					PlacedAt = tick(),
 					Ref = itemRef,
@@ -181,10 +186,40 @@ function CargoService.UpdateFreshness(player: Player, deltaTime: number)
 		return
 	end
 
+	-- Check if ice has expired
+	if cargo.IceActive and cargo.IceExpiresAt and tick() > cargo.IceExpiresAt then
+		cargo.IceActive = false
+		cargo.IceModifier = nil
+		cargo.IceExpiresAt = nil
+	end
+
+	local iceMod = cargo.IceModifier or 1.0
+
 	for i = #cargo.Items, 1, -1 do
 		local item = cargo.Items[i]
-		item.Freshness = math.max(0, item.Freshness - (item.FreshnessDecayRate or 0.5) * (deltaTime / 60))
+		local decayRate = item.FreshnessDecayRate or 0.5
+		item.Freshness = math.max(0, item.Freshness - (decayRate * iceMod) * (deltaTime / 60))
 	end
+end
+
+function CargoService.ActivateIce(player: Player, itemId: string): boolean
+	local cargo = playerCargo[player.UserId]
+	if not cargo then
+		return false
+	end
+
+	local ItemDefinitions = require(ReplicatedStorage.Shared.Config.ItemDefinitions)
+	local itemDef = ItemDefinitions.GetItem(itemId)
+	if not itemDef or itemDef.Category ~= "Supply" or not itemDef.FreshnessModifier then
+		return false
+	end
+
+	-- Apply ice effect
+	cargo.IceActive = true
+	cargo.IceModifier = itemDef.FreshnessModifier
+	cargo.IceExpiresAt = tick() + (itemDef.Duration or 300)
+
+	return true
 end
 
 function CargoService.ClearCargo(player: Player)

@@ -1,6 +1,6 @@
 local ItemDefinitions = {}
 
-export type ItemCategory = "Fish" | "Processed" | "Salvage" | "Bait" | "Tool" | "Material"
+export type ItemCategory = "Fish" | "Processed" | "Salvage" | "Bait" | "Tool" | "Material" | "Supply"
 
 export type ItemDef = {
 	ItemId: string,
@@ -175,6 +175,51 @@ ItemDefinitions.Items = {
 		MaxStack = 1,
 		GridWidth = 2,
 		GridHeight = 2,
+	},
+
+	-- ==========================================
+	-- SUPPLIES
+	-- ==========================================
+	BasicIce = {
+		ItemId = "BasicIce",
+		DisplayName = "Ice Pack",
+		Description = "Keeps fish fresh longer. Reduces decay by 50% for 5 minutes.",
+		Category = "Supply",
+		BaseValue = 25,
+		Stackable = true,
+		MaxStack = 10,
+		GridWidth = 1,
+		GridHeight = 1,
+		FreshnessModifier = 0.5,
+		Duration = 300,
+	},
+
+	PremiumIce = {
+		ItemId = "PremiumIce",
+		DisplayName = "Premium Ice",
+		Description = "High-quality ice. Reduces decay by 75% for 8 minutes.",
+		Category = "Supply",
+		BaseValue = 60,
+		Stackable = true,
+		MaxStack = 5,
+		GridWidth = 1,
+		GridHeight = 1,
+		FreshnessModifier = 0.25,
+		Duration = 480,
+	},
+
+	SaltBox = {
+		ItemId = "SaltBox",
+		DisplayName = "Salt Box",
+		Description = "Salt preservation. Halts decay completely for 3 minutes.",
+		Category = "Supply",
+		BaseValue = 100,
+		Stackable = true,
+		MaxStack = 3,
+		GridWidth = 1,
+		GridHeight = 1,
+		FreshnessModifier = 0,
+		Duration = 180,
 	},
 }
 

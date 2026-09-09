@@ -347,12 +347,22 @@ function UIController.UpdateCargoDisplay(cargoData)
 			if row then
 				local cargoValue = row:FindFirstChild("CargoValue")
 				if cargoValue then
-					local used = cargoData.Used or 0
-					local total = cargoData.Total or 0
+					local used = 0
+					local total = 0
+					if cargoData then
+						-- Calculate used cells from items
+						if cargoData.Items then
+							for _, item in cargoData.Items do
+								used = used + ((item.Width or 1) * (item.Height or 1))
+							end
+						end
+						-- Calculate total from grid dimensions
+						total = (cargoData.GridWidth or 4) * (cargoData.GridHeight or 3)
+					end
 					cargoValue.Text = tostring(used) .. "/" .. tostring(total)
-					if used >= total then
+					if total > 0 and used >= total then
 						cargoValue.TextColor3 = UIConfig.Colors.Danger
-					elseif used >= total * 0.8 then
+					elseif total > 0 and used >= total * 0.8 then
 						cargoValue.TextColor3 = UIConfig.Colors.Gold
 					else
 						cargoValue.TextColor3 = UIConfig.Colors.White

@@ -118,7 +118,17 @@ function DockUI.OpenVillageMenu()
 		DockUI.OpenProjectBoardUI()
 	end)
 
-	local closeBtn = CreateMenuButton("Close", UIConfig.Colors.Muted, 340)
+	CreateMenuButton("Buy Ice (Keep Fish Fresh)", Color3.fromHex("#5BA8D6"), 340).MouseButton1Click:Connect(function()
+		DockUI.Close()
+		DockUI.OpenIceShopUI()
+	end)
+
+	CreateMenuButton("Order Board", Color3.fromHex("#FF8A65"), 394).MouseButton1Click:Connect(function()
+		DockUI.Close()
+		DockUI.OpenOrderBoardUI()
+	end)
+
+	local closeBtn = CreateMenuButton("Close", UIConfig.Colors.Muted, 448)
 	closeBtn.TextXAlignment = Enum.TextXAlignment.Center
 	closeBtn.MouseButton1Click:Connect(function()
 		DockUI.Close()
@@ -542,6 +552,331 @@ end
 
 function DockUI.OpenRepairUI()
 	DockUI.OpenShipwrightUI()
+end
+
+-- ==========================================
+-- ORDER BOARD UI
+-- ==========================================
+
+function DockUI.OpenOrderBoardUI()
+	isUIOpen = true
+
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "OrderBoardUI"
+	screenGui.ResetOnSpawn = false
+
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(0, 520, 0, 520)
+	container.Position = UDim2.new(0.5, -260, 0.5, -260)
+	container.BackgroundColor3 = UIConfig.Colors.Background
+	container.BorderSizePixel = 0
+	container.Parent = screenGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.LG)
+	corner.Parent = container
+
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.new(1, 0, 0, 50)
+	title.BackgroundTransparency = 1
+	title.Text = "Restaurant Orders"
+	title.TextColor3 = Color3.fromHex("#FF8A65")
+	title.TextSize = UIConfig.TextSizes.HeaderLarge
+	title.Font = UIConfig.Fonts.Header
+	title.Parent = container
+
+	local subtitle = Instance.new("TextLabel")
+	subtitle.Size = UDim2.new(1, -40, 0, 20)
+	subtitle.Position = UDim2.new(0, 20, 0, 48)
+	subtitle.BackgroundTransparency = 1
+	subtitle.Text = "Fulfill orders for bonus Gold"
+	subtitle.TextColor3 = UIConfig.Colors.Muted
+	subtitle.TextSize = UIConfig.TextSizes.Small
+	subtitle.Font = UIConfig.Fonts.Body
+	subtitle.TextXAlignment = Enum.TextXAlignment.Left
+	subtitle.Parent = container
+
+	local scrollFrame = Instance.new("ScrollingFrame")
+	scrollFrame.Size = UDim2.new(1, -20, 0, 380)
+	scrollFrame.Position = UDim2.new(0, 10, 0, 75)
+	scrollFrame.BackgroundTransparency = 1
+	scrollFrame.ScrollBarThickness = 6
+	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+	scrollFrame.Parent = container
+
+	local listLayout = Instance.new("UIListLayout")
+	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	listLayout.Padding = UDim.new(0, 6)
+	listLayout.Parent = scrollFrame
+
+	-- Fetch orders from server
+	local result = Remotes.GetClientToServer().GetOrders:InvokeServer()
+	local orders = (result and result.Orders) or {}
+
+	if #orders == 0 then
+		local emptyLabel = Instance.new("TextLabel")
+		emptyLabel.Size = UDim2.new(1, 0, 0, 40)
+		emptyLabel.BackgroundTransparency = 1
+		emptyLabel.Text = "No orders available. Check back later!"
+		emptyLabel.TextColor3 = UIConfig.Colors.Muted
+		emptyLabel.TextSize = UIConfig.TextSizes.Body
+		emptyLabel.Font = UIConfig.Fonts.Body
+		emptyLabel.LayoutOrder = 9999
+		emptyLabel.Parent = scrollFrame
+	end
+
+	for i, order in orders do
+		local timeLeft = math.max(0, math.floor(order.ExpiresAt - tick()))
+		local minutes = math.floor(timeLeft / 60)
+		local seconds = timeLeft % 60
+
+		local card = Instance.new("Frame")
+		card.Size = UDim2.new(1, -10, 0, 90)
+		card.BackgroundColor3 = UIConfig.Colors.White
+		card.BorderSizePixel = 0
+		card.LayoutOrder = i
+		card.Parent = scrollFrame
+
+		local cardCorner = Instance.new("UICorner")
+		cardCorner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
+		cardCorner.Parent = card
+
+		local restLabel = Instance.new("TextLabel")
+		restLabel.Size = UDim2.new(0.7, 0, 0, 20)
+		restLabel.Position = UDim2.new(0, 10, 0, 6)
+		restLabel.BackgroundTransparency = 1
+		restLabel.Text = order.RestaurantName
+		restLabel.TextColor3 = Color3.fromHex("#FF8A65")
+		restLabel.TextSize = UIConfig.TextSizes.Subheader
+		restLabel.Font = UIConfig.Fonts.Header
+		restLabel.TextXAlignment = Enum.TextXAlignment.Left
+		restLabel.Parent = card
+
+		local orderLabel = Instance.new("TextLabel")
+		orderLabel.Size = UDim2.new(0.7, 0, 0, 18)
+		orderLabel.Position = UDim2.new(0, 10, 0, 28)
+		orderLabel.BackgroundTransparency = 1
+		orderLabel.Text = "Wants: " .. order.Quantity .. "x " .. order.SpeciesId
+		orderLabel.TextColor3 = UIConfig.Colors.Text
+		orderLabel.TextSize = UIConfig.TextSizes.Body
+		orderLabel.Font = UIConfig.Fonts.Body
+		orderLabel.TextXAlignment = Enum.TextXAlignment.Left
+		orderLabel.Parent = card
+
+		local rewardLabel = Instance.new("TextLabel")
+		rewardLabel.Size = UDim2.new(0.7, 0, 0, 18)
+		rewardLabel.Position = UDim2.new(0, 10, 0, 48)
+		rewardLabel.BackgroundTransparency = 1
+		rewardLabel.Text = "Reward: " .. order.Reward .. " Gold"
+		rewardLabel.TextColor3 = UIConfig.Colors.Gold
+		rewardLabel.TextSize = UIConfig.TextSizes.Body
+		rewardLabel.Font = UIConfig.Fonts.Button
+		rewardLabel.TextXAlignment = Enum.TextXAlignment.Left
+		rewardLabel.Parent = card
+
+		local timeLabel = Instance.new("TextLabel")
+		timeLabel.Size = UDim2.new(0.7, 0, 0, 16)
+		timeLabel.Position = UDim2.new(0, 10, 0, 68)
+		timeLabel.BackgroundTransparency = 1
+		timeLabel.Text = "Time left: " .. minutes .. ":" .. string.format("%02d", seconds)
+		timeLabel.TextColor3 = timeLeft < 120 and UIConfig.Colors.Danger or UIConfig.Colors.Muted
+		timeLabel.TextSize = UIConfig.TextSizes.Small
+		timeLabel.Font = UIConfig.Fonts.Body
+		timeLabel.TextXAlignment = Enum.TextXAlignment.Left
+		timeLabel.Parent = card
+
+		local acceptBtn = Instance.new("TextButton")
+		acceptBtn.Size = UDim2.new(0, 100, 0, 36)
+		acceptBtn.Position = UDim2.new(1, -112, 0.5, -18)
+		acceptBtn.BackgroundColor3 = UIConfig.Colors.Seafoam
+		acceptBtn.Text = "Accept"
+		acceptBtn.TextColor3 = UIConfig.Colors.Text
+		acceptBtn.TextSize = UIConfig.TextSizes.Body
+		acceptBtn.Font = UIConfig.Fonts.Button
+		acceptBtn.Parent = card
+
+		local acceptBtnCorner = Instance.new("UICorner")
+		acceptBtnCorner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
+		acceptBtnCorner.Parent = acceptBtn
+
+		acceptBtn.MouseButton1Click:Connect(function()
+			local res = Remotes.GetClientToServer().AcceptOrder:InvokeServer(order.OrderId)
+			if res and res.Success then
+				DockUI.Close()
+				local UIController = require(player.PlayerScripts.Client.UIController)
+				UIController.ShowNotification("Order accepted! Catch " .. order.Quantity .. "x " .. order.SpeciesId)
+			elseif res then
+				local UIController = require(player.PlayerScripts.Client.UIController)
+				UIController.ShowNotification(res.Reason or "Cannot accept")
+			end
+		end)
+	end
+
+	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, #orders * 96 + 10)
+
+	-- Close button
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Size = UDim2.new(1, -40, 0, 40)
+	closeBtn.Position = UDim2.new(0, 20, 1, -50)
+	closeBtn.BackgroundColor3 = UIConfig.Colors.Muted
+	closeBtn.Text = "Close"
+	closeBtn.TextColor3 = UIConfig.Colors.White
+	closeBtn.TextSize = UIConfig.TextSizes.Body
+	closeBtn.Font = UIConfig.Fonts.Button
+	closeBtn.Parent = container
+
+	local closeCorner = Instance.new("UICorner")
+	closeCorner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
+	closeCorner.Parent = closeBtn
+
+	closeBtn.MouseButton1Click:Connect(function()
+		DockUI.Close()
+	end)
+
+	screenGui.Parent = player.PlayerGui
+	currentScreen = screenGui
+end
+
+-- ==========================================
+-- ICE SHOP UI
+-- ==========================================
+
+function DockUI.OpenIceShopUI()
+	isUIOpen = true
+
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "IceShopUI"
+	screenGui.ResetOnSpawn = false
+
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(0, 420, 0, 380)
+	container.Position = UDim2.new(0.5, -210, 0.5, -190)
+	container.BackgroundColor3 = UIConfig.Colors.Background
+	container.BorderSizePixel = 0
+	container.Parent = screenGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.LG)
+	corner.Parent = container
+
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.new(1, 0, 0, 50)
+	title.BackgroundTransparency = 1
+	title.Text = "Bait & Ice Shop"
+	title.TextColor3 = Color3.fromHex("#5BA8D6")
+	title.TextSize = UIConfig.TextSizes.HeaderLarge
+	title.Font = UIConfig.Fonts.Header
+	title.Parent = container
+
+	local subtitle = Instance.new("TextLabel")
+	subtitle.Size = UDim2.new(1, -40, 0, 20)
+	subtitle.Position = UDim2.new(0, 20, 0, 48)
+	subtitle.BackgroundTransparency = 1
+	subtitle.Text = "Buy supplies to keep your fish fresh longer"
+	subtitle.TextColor3 = UIConfig.Colors.Muted
+	subtitle.TextSize = UIConfig.TextSizes.Small
+	subtitle.Font = UIConfig.Fonts.Body
+	subtitle.TextXAlignment = Enum.TextXAlignment.Left
+	subtitle.Parent = container
+
+	local items = {
+		{ Id = "BasicIce", Name = "Ice Pack", Desc = "-50% decay for 5 min", Cost = 25, Color = Color3.fromHex("#5BA8D6") },
+		{ Id = "PremiumIce", Name = "Premium Ice", Desc = "-75% decay for 8 min", Cost = 60, Color = Color3.fromHex("#42A5F5") },
+		{ Id = "SaltBox", Name = "Salt Box", Desc = "No decay for 3 min", Cost = 100, Color = Color3.fromHex("#E0E0E0") },
+	}
+
+	for i, item in items do
+		local card = Instance.new("Frame")
+		card.Size = UDim2.new(1, -40, 0, 80)
+		card.Position = UDim2.new(0, 20, 0, 75 + (i - 1) * 90)
+		card.BackgroundColor3 = UIConfig.Colors.White
+		card.BorderSizePixel = 0
+		card.Parent = container
+
+		local cardCorner = Instance.new("UICorner")
+		cardCorner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
+		cardCorner.Parent = card
+
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.new(0.65, 0, 0, 22)
+		nameLabel.Position = UDim2.new(0, 12, 0, 8)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Text = item.Name
+		nameLabel.TextColor3 = item.Color
+		nameLabel.TextSize = UIConfig.TextSizes.Subheader
+		nameLabel.Font = UIConfig.Fonts.Header
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+		nameLabel.Parent = card
+
+		local descLabel = Instance.new("TextLabel")
+		descLabel.Size = UDim2.new(0.65, 0, 0, 18)
+		descLabel.Position = UDim2.new(0, 12, 0, 32)
+		descLabel.BackgroundTransparency = 1
+		descLabel.Text = item.Desc
+		descLabel.TextColor3 = UIConfig.Colors.Muted
+		descLabel.TextSize = UIConfig.TextSizes.Small
+		descLabel.Font = UIConfig.Fonts.Body
+		descLabel.TextXAlignment = Enum.TextXAlignment.Left
+		descLabel.Parent = card
+
+		local costLabel = Instance.new("TextLabel")
+		costLabel.Size = UDim2.new(0.65, 0, 0, 18)
+		costLabel.Position = UDim2.new(0, 12, 0, 52)
+		costLabel.BackgroundTransparency = 1
+		costLabel.Text = item.Cost .. " Gold"
+		costLabel.TextColor3 = UIConfig.Colors.Gold
+		costLabel.TextSize = UIConfig.TextSizes.Body
+		costLabel.Font = UIConfig.Fonts.Button
+		costLabel.TextXAlignment = Enum.TextXAlignment.Left
+		costLabel.Parent = card
+
+		local buyBtn = Instance.new("TextButton")
+		buyBtn.Size = UDim2.new(0, 100, 0, 36)
+		buyBtn.Position = UDim2.new(1, -112, 0.5, -18)
+		buyBtn.BackgroundColor3 = UIConfig.Colors.Seafoam
+		buyBtn.Text = "Buy & Use"
+		buyBtn.TextColor3 = UIConfig.Colors.Text
+		buyBtn.TextSize = UIConfig.TextSizes.Body
+		buyBtn.Font = UIConfig.Fonts.Button
+		buyBtn.Parent = card
+
+		local buyBtnCorner = Instance.new("UICorner")
+		buyBtnCorner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
+		buyBtnCorner.Parent = buyBtn
+
+		buyBtn.MouseButton1Click:Connect(function()
+			local result = Remotes.GetClientToServer().ActivateIce:InvokeServer(item.Id)
+			if result and result.Success then
+				local UIController = require(player.PlayerScripts.Client.UIController)
+				UIController.ShowNotification(item.Name .. " activated!")
+			elseif result then
+				local UIController = require(player.PlayerScripts.Client.UIController)
+				UIController.ShowNotification(result.Reason or "Cannot buy")
+			end
+		end)
+	end
+
+	-- Close button
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Size = UDim2.new(1, -40, 0, 40)
+	closeBtn.Position = UDim2.new(0, 20, 1, -50)
+	closeBtn.BackgroundColor3 = UIConfig.Colors.Muted
+	closeBtn.Text = "Close"
+	closeBtn.TextColor3 = UIConfig.Colors.White
+	closeBtn.TextSize = UIConfig.TextSizes.Body
+	closeBtn.Font = UIConfig.Fonts.Button
+	closeBtn.Parent = container
+
+	local closeCorner = Instance.new("UICorner")
+	closeCorner.CornerRadius = UDim.new(0, UIConfig.CornerRadii.SM)
+	closeCorner.Parent = closeBtn
+
+	closeBtn.MouseButton1Click:Connect(function()
+		DockUI.Close()
+	end)
+
+	screenGui.Parent = player.PlayerGui
+	currentScreen = screenGui
 end
 
 -- ==========================================
