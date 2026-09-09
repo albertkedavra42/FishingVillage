@@ -89,6 +89,10 @@ function UIController.Init()
 		UIController.UpdateZoneDisplay(boatData.CurrentZone or "Shallows")
 	end)
 
+	-- Initialize tutorial for new players
+	local TutorialController = require(script.Parent.TutorialController)
+	TutorialController.Init()
+
 	print("[UIController] Initialized")
 end
 
